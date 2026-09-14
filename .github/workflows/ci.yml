@@ -67,7 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: semgrep scan --config p/owasp-top-ten --config p/secrets --error --sarif --output semgrep.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@v4
         if: always()
         with: { sarif_file: semgrep.sarif }
 
@@ -98,7 +98,7 @@ jobs:
           exit-code: "1"
           format: sarif
           output: trivy-${{ matrix.svc }}.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-${{ matrix.svc }}.sarif
