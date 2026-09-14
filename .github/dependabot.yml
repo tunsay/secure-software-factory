@@ -1,17 +1,25 @@
+# Délai de carence de 7 jours sur toute nouvelle version : les paquets malveillants
+# publiés sur npm/PyPI sont en général retirés en quelques jours. Ne pas être le premier
+# à installer une release est un contrôle de supply chain à coût nul.
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /app/api
     schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
   - package-ecosystem: npm
     directory: /app/web
     schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
   - package-ecosystem: docker
     directory: /app/api
     schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
   - package-ecosystem: docker
     directory: /app/web
     schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    cooldown: { default-days: 7 }

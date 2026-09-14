@@ -13,7 +13,7 @@ VENV := app/api/.venv
 PY   := $(VENV)/bin/python
 export PATH := $(CURDIR)/$(VENV)/bin:$(PATH)
 
-.PHONY: help setup up down logs build test lint scan scan-image sbom clean install-tools
+.PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -52,11 +52,15 @@ lint: setup ## Lint + SAST locaux (ruff, bandit, eslint)
 	cd app/api && ruff check . && ruff format --check . && bandit -q -r app -c pyproject.toml
 	cd app/web && npm run lint
 
-scan: lint scan-image ## Rejoue les contrôles CI en local
+scan: lint semgrep scan-image ## Rejoue les contrôles CI en local
 	cd app/api && pip-audit -r requirements.txt --strict
 	cd app/web && npm audit --audit-level=high
 	gitleaks dir . --no-banner --redact
 	@if [ -d .git ]; then gitleaks git . --no-banner --redact; else echo "gitleaks git : pas de dépôt, historique non scanné"; fi
+
+semgrep: ## SAST multi-langage, même image et mêmes règles que la CI
+	docker run --rm -v "$(CURDIR):/src" -w /src semgrep/semgrep \
+	  semgrep scan --config p/owasp-top-ten --config p/secrets --error --metrics=off --quiet
 
 scan-image: build ## Scan Trivy des images (bloque sur HIGH/CRITICAL)
 	trivy image --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed $(API_IMG)
