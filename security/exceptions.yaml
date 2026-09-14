@@ -1,0 +1,12 @@
+# Dérogations aux gates de sécurité.
+# Chaque entrée : identifiant, outil, justification, propriétaire, date d'expiration.
+# Une dérogation expirée fait échouer la CI (contrôle ajouté en S4).
+exceptions: []
+
+# Exemple de format :
+# - id: CVE-2025-00000
+#   tool: trivy
+#   image: ssf-api
+#   reason: "Faux positif : le binaire vulnérable n'est pas présent à l'exécution (distroless)."
+#   owner: tunsay
+#   expires: 2026-12-31

@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Terraform — le state ne doit JAMAIS être commité
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl.bak
+*.tfvars
+!*.example.tfvars
+crash.log
+
+# Kubernetes / secrets locaux
+kubeconfig*
+*.kubeconfig
+.kube/
+*-secret.yaml
+!*-sealed-secret.yaml
+
+# Outils
+.env
+.env.*
+!.env.example
+trivy-results.*
+*.sarif
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

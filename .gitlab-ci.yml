@@ -1,0 +1,60 @@
+# Équivalent GitLab CI de .github/workflows/ci.yml — maintenu en parallèle.
+# GitLab CI est le dénominateur commun des offres DevSecOps IDF (7/10).
+stages: [secrets, sast, build, scan]
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  npm_config_cache: "$CI_PROJECT_DIR/.cache/npm"
+
+gitleaks:
+  stage: secrets
+  image: zricethezav/gitleaks:latest
+  script: gitleaks detect --source . --no-banner --redact
+
+api:
+  stage: sast
+  image: python:3.12-slim
+  cache: { key: pip, paths: [.cache/pip] }
+  script:
+    - cd app/api
+    - pip install -r requirements-dev.txt
+    - ruff check . && ruff format --check .
+    - bandit -q -r app -c pyproject.toml
+    - pip-audit -r requirements.txt --strict
+    - python -m pytest -q
+
+web:
+  stage: sast
+  image: node:22-alpine
+  cache: { key: npm, paths: [.cache/npm] }
+  script:
+    - cd app/web
+    - npm ci --no-audit --no-fund
+    - npm run lint
+    - npm audit --audit-level=high
+    - npm run build
+
+semgrep:
+  stage: sast
+  image: semgrep/semgrep
+  script: semgrep scan --config p/owasp-top-ten --config p/secrets --error --gitlab-sast --output gl-sast-report.json
+  artifacts:
+    reports: { sast: gl-sast-report.json }
+
+.build_scan:
+  stage: build
+  image: docker:27
+  services: [docker:27-dind]
+  needs: [api, web]
+  script:
+    - docker build -t ssf-$SVC:$CI_COMMIT_SHORT_SHA app/$SVC
+    - docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.0
+        image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 ssf-$SVC:$CI_COMMIT_SHORT_SHA
+
+build_api:
+  extends: .build_scan
+  variables: { SVC: api }
+
+build_web:
+  extends: .build_scan
+  variables: { SVC: web }

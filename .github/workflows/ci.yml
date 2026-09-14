@@ -1,0 +1,105 @@
+# Pipeline de référence — version semaine 1.
+# Étages : secrets → lint/SAST → SCA → tests → build → scan image.
+# S4 ajoutera : Checkov (IaC), SBOM Syft, signature Cosign, épinglage des actions par SHA.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write # upload SARIF vers l'onglet Security
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  api:
+    name: api · lint / SAST / SCA / tests
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: app/api } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: app/api/requirements-dev.txt }
+      - run: pip install -r requirements-dev.txt
+      - name: ruff
+        run: ruff check . && ruff format --check .
+      - name: bandit (SAST)
+        run: bandit -q -r app -c pyproject.toml
+      - name: pip-audit (SCA)
+        run: pip-audit -r requirements.txt --strict
+      - name: pytest
+        run: python -m pytest -q
+
+  web:
+    name: web · lint / SAST / SCA / build
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: app/web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: app/web/package-lock.json }
+      - run: npm ci --no-audit --no-fund
+      - name: eslint + tsc (SAST)
+        run: npm run lint
+      - name: npm audit (SCA)
+        run: npm audit --audit-level=high
+      - run: npm run build
+
+  semgrep:
+    name: semgrep (SAST multi-langage)
+    runs-on: ubuntu-latest
+    container: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - run: semgrep scan --config p/owasp-top-ten --config p/secrets --error --sarif --output semgrep.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with: { sarif_file: semgrep.sarif }
+
+  images:
+    name: build + trivy · ${{ matrix.svc }}
+    needs: [api, web]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        svc: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build
+        uses: docker/build-push-action@v6
+        with:
+          context: app/${{ matrix.svc }}
+          load: true
+          tags: ssf-${{ matrix.svc }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: trivy (bloquant sur HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ssf-${{ matrix.svc }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: sarif
+          output: trivy-${{ matrix.svc }}.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-${{ matrix.svc }}.sarif
+          category: trivy-${{ matrix.svc }}

@@ -1,0 +1,7 @@
+# Fins de ligne LF partout, quel que soit l'OS du poste (Windows + WSL sur le même dossier).
+* text=auto eol=lf
+*.sh text eol=lf
+Makefile text eol=lf
+*.png binary
+*.jpg binary
+*.woff2 binary
