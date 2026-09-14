@@ -11,6 +11,8 @@ quatre commandes.
 
 ## Ce qui a été construit
 
+![L'application sur localhost:8080 — l'API répond, le stockage est en mémoire](img/01-app.png)
+
 ```
 app/api/        FastAPI : /health, /items (CRUD en mémoire), /metrics
 app/web/        React + TypeScript : une page, appelle l'API via nginx
@@ -107,6 +109,8 @@ Correction : deux appels distincts, `gitleaks dir .` (fichiers, toujours) et `gi
 
 Premier push : 4 jobs verts, 2 rouges.
 
+![Premier run : semgrep et Trivy en échec](img/01-ci-rouge.png)
+
 - Trivy : `trivy-action@0.28.0` n'existait pas (tag sans `v`, version ancienne).
 - semgrep : **19 détections**, toutes dans les fichiers de la chaîne, aucune dans l'app :
 
@@ -135,12 +139,19 @@ Plutôt qu'arbitrer entre deux bases de sévérité : pip, setuptools et wheel r
 emplacements. L'image finale n'a plus aucun gestionnaire de paquets. Le build échoue
 désormais si pip est encore présent.
 
+![Onglet Security : 31 alertes closes, 0 ouverte — les 12 CVE pip apparaissent en double, une par emplacement](img/01-security-alerts.png)
+
 *Leçon : quand deux scanners divergent sur une sévérité, la bonne réponse est souvent de
 supprimer le composant plutôt que de choisir un scanner.*
 
-### 6. Trois pull requests Dependabot, une seule acceptée
+### 6. Huit pull requests Dependabot, une seule acceptée
 
-Dependabot a ouvert trois PR dans l'heure suivant le push.
+Dependabot a ouvert huit PR dans l'heure suivant le premier push. Cinq proposaient des bumps
+d'actions GitHub (checkout, setup-python, codeql, buildx, build-push) : elles se sont fermées
+d'elles-mêmes quand `main` a reçu l'épinglage par SHA sur les versions courantes. Restaient trois
+PR à décider.
+
+![Les huit PR Dependabot, toutes closes — une seule avec sa CI verte, faite à la main](img/01-dependabot.png)
 
 | PR | Proposition | Décision | Raison |
 |---|---|---|---|
@@ -218,10 +229,13 @@ au démon Docker.
 
 ## État en fin de jalon
 
+![Dernier run : six jobs verts, smoke test inclus](img/01-ci-verte.png)
+
 - Dépôt public : github.com/tunsay/secure-software-factory
-- CI : 6 jobs, verts, actions épinglées par SHA
+- CI : 6 jobs, verts, actions épinglées par SHA, smoke test des images
 - Images : 0 CVE HIGH/CRITICAL, non-root, sans gestionnaire de paquets
-- 4 commits sur `main`, 2 PR refusées avec justification, 1 bump fait à la main
+- Security : 31 alertes ouvertes puis closes dans la journée, 0 restante
+- 5 commits sur `main`, 8 PR Dependabot traitées — 2 refusées avec politique écrite, 1 bump fait à la main
 
 ## Ce qui reste ouvert, et pourquoi
 
@@ -233,13 +247,3 @@ au démon Docker.
 | L'API peut joindre le front sur le réseau compose | réseau plat | NetworkPolicies, S3 |
 | Actions épinglées, mais images de base par tag | — | épinglage par digest, S4 |
 | Pas de SBOM, pas de signature | — | S4 |
-
-## Captures d'écran
-
-*(à insérer — voir `docs/rapport/img/README.md`)*
-
-- `img/01-app.png` — l'application sur localhost:8080, API « ok »
-- `img/01-ci-verte.png` — l'exécution GitHub Actions, six jobs verts
-- `img/01-ci-rouge.png` — la première exécution, semgrep et Trivy rouges
-- `img/01-security-alerts.png` — l'onglet Security, alertes semgrep closes
-- `img/01-dependabot.png` — les trois PR, deux fermées avec commentaire
