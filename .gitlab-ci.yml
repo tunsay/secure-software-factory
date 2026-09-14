@@ -25,7 +25,7 @@ api:
 
 web:
   stage: sast
-  image: node:22-alpine
+  image: node:24-alpine
   cache: { key: npm, paths: [.cache/npm] }
   script:
     - cd app/web
