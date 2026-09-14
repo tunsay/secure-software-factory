@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12", cache: pip, cache-dependency-path: app/api/requirements-dev.txt }
+        with: { python-version: "3.14", cache: pip, cache-dependency-path: app/api/requirements-dev.txt }
       - run: pip install -r requirements-dev.txt
       - name: ruff
         run: ruff check . && ruff format --check .
@@ -89,6 +89,17 @@ jobs:
           tags: ssf-${{ matrix.svc }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: smoke test (l'image démarre, répond, tourne sans root)
+        run: |
+          set -euo pipefail
+          IMG=ssf-${{ matrix.svc }}:${{ github.sha }}
+          if [ "${{ matrix.svc }}" = api ]; then PORT=8000; PATH_=/health; UID_=10001; else PORT=8080; PATH_=/healthz; UID_=101; fi
+          # Le front proxifie /api vers un hôte "api" : on le résout vers un stub pour que nginx démarre.
+          docker run -d --name smoke --add-host api:127.0.0.1 -p $PORT:$PORT "$IMG"
+          for i in $(seq 1 20); do curl -fsS "http://127.0.0.1:$PORT$PATH_" && break; sleep 1; done
+          curl -fsS "http://127.0.0.1:$PORT$PATH_"
+          test "$(docker exec smoke id -u)" = "$UID_"
+          docker rm -f smoke
       - name: trivy (bloquant sur HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
