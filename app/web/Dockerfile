@@ -1,7 +1,7 @@
 # --- étape 1 : build statique -------------------------------------------------
 # Politique : LTS actif uniquement (Node 24 depuis oct. 2025). Dependabot propose la
 # dernière version, y compris non-LTS ; les majeures non-LTS sont ignorées via commentaire PR.
-FROM node:24-alpine AS builder
+FROM node:25-alpine AS builder
 
 WORKDIR /build
 COPY package.json package-lock.json ./
