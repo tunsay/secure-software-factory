@@ -43,14 +43,17 @@ recruté sur son front-end.
 |---|---|---|
 | Front-end | React + TypeScript, une page | Lisibilité immédiate pour un recruteur. Sert de cible à sécuriser (dépendances, CSP, lint), pas de vitrine. |
 | Back-end | Python / FastAPI, trois endpoints | Python est le langage de scripting attendu partout. Écosystème sécurité direct (bandit, pip-audit, semgrep). Go écarté : coût d'apprentissage non justifié pour ce projet. |
-| IaC | Terraform | Objectif d'apprentissage principal. 4 offres / 10. |
+| IaC | Terraform (providers kind, kubernetes, helm) | Objectif d'apprentissage principal. 4 offres / 10. Pilote le cluster local, pas un cloud (ADR 0004). |
 | Orchestration | Kubernetes via kind (local) | Coût zéro, reproductible. Toute la sécurité K8s se démontre en local. |
+| Registre | GitHub Container Registry | Authentification par le token OIDC de la CI : aucun secret statique. |
 | CI/CD | GitHub Actions (référence) + GitLab CI (miroir) | GitLab CI est le dénominateur commun (7/10) ; GitHub est là où les recruteurs regardent. |
 | Sécurité | Trivy, semgrep, bandit, gitleaks, Checkov, Cosign, Kyverno | SAST, SCA, scan d'image, scan IaC, signature, policy-as-code. |
 | Observabilité | Prometheus + Grafana | 4 offres / 10. |
 
 ## Contraintes assumées
 
-- Kubernetes en local, Terraform sur AWS free tier uniquement — [ADR 0002](../adr/0002-kubernetes-local-terraform-aws.md).
-- Pas de NAT Gateway — [ADR 0003](../adr/0003-pas-de-nat-gateway.md).
+- Kubernetes en local via kind — [ADR 0002](../adr/0002-kubernetes-local-terraform-aws.md).
+- Aucun fournisseur cloud : Terraform pilote le cluster local, registre GHCR —
+  [ADR 0004](../adr/0004-terraform-sans-fournisseur-cloud.md), qui remplace le volet AWS de
+  l'ADR 0002 (décidé au jalon 2, voir chapitre 2).
 - Développement soirs et week-ends, six jalons sur six à huit semaines.

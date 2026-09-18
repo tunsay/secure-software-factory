@@ -36,3 +36,8 @@ aucun correctif de sécurité depuis.
   qu'appliqué à la main — le projet devient intégralement « infrastructure as code ».
 - Passage ultérieur à un cloud : ajouter un module avec le provider correspondant ; la couche
   `platform` est indépendante de l'origine du cluster.
+- L'état de la couche `platform` vit dans le cluster : sa durée de vie est celle du cluster.
+  Un cluster kind est jetable ; le perdre n'est pas un incident, `make infra-up` le reconstruit.
+- Limites constatées du provider `tehcyx/kind` : bibliothèque kind embarquée en retard sur
+  l'outil installé (formats kubeadm et images de nœuds à aligner sur *sa* version), et plantage
+  au `plan` quand le cluster a disparu au lieu de proposer une recréation.
