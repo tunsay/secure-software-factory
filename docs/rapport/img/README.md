@@ -19,6 +19,7 @@ Déposer ici les PNG nommés exactement comme ci-dessous. Le rapport les référ
 | `02-docker-containers.png` | Les trois nœuds `ssf-dev-*` en cours d'exécution, port 8444 publié | Docker Desktop → Containers |
 | `02-docker-images.png` | `kindest/node` tirée par digest (tag `<none>`), 1,35 Go | Docker Desktop → Images |
 | `02-docker-volumes.png` | Les trois volumes `/var` des nœuds, dont celui d'etcd | Docker Desktop → Volumes |
+| `02-attack-escape.png` _(optionnel)_ | La sortie de `make attack-escape` : shadow lu dans `default`, refus dans `ssf` | terminal |
 
 Conseils : fenêtre du navigateur à ~1400 px de large, thème clair (meilleur rendu à l'impression),
 Win+Maj+S pour capturer une zone.

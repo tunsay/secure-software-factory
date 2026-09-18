@@ -148,6 +148,72 @@ requests.memory  0     1Gi
 
 ![Image des nœuds tirée par digest — tag `<none>`, c'est voulu](img/02-docker-images.png)
 
+## Démonstration : à quoi sert vraiment Terraform ici
+
+Une preuve d'admission montre qu'un pod est refusé. Elle ne montre pas ce qu'on évite. Pour ça,
+on lance **la même attaque dans deux namespaces** : `default`, que Terraform n'a pas touché, et
+`ssf`, sur lequel Terraform a posé les Pod Security Standards `restricted`. Un seul manifeste
+(`security/attacks/hostpath-escape.yaml`), rejoué par `make attack-escape`.
+
+L'attaque est l'une des plus courantes sur Kubernetes : un pod privilégié qui monte le système
+de fichiers du nœud (`hostPath: /`). Un attaquant n'a besoin que du droit de créer un pod —
+souvent obtenu via un compte de service trop permissif.
+
+### Sans le durcissement Terraform — namespace `default`
+
+Le pod démarre. Depuis le conteneur, l'attaquant lit le fichier des mots de passe **du nœud** :
+
+```
+$ kubectl -n default exec node-pwn -- head -3 /host/etc/shadow
+root:*:20430:0:99999:7:::
+daemon:*:20430:0:99999:7:::
+bin:*:20430:0:99999:7:::
+```
+
+Et voit les processus de l'hôte, dont le kubelet qui pilote le nœud :
+
+```
+$ kubectl -n default exec node-pwn -- ps -o pid,args | grep kubelet
+221 /usr/bin/kubelet --kubeconfig=/etc/kubernetes/kubelet.conf ... --provider-id=kind://docker/ssf-dev/ssf-dev-worker
+```
+
+À ce stade, le conteneur n'est plus un conteneur : c'est un accès root à la machine. Il peut lire
+les secrets des autres pods, modifier le kubelet, rebondir sur tout le cluster. **Un droit de
+créer un pod est devenu la prise de contrôle du nœud.**
+
+### Avec le durcissement Terraform — namespace `ssf`
+
+Le même manifeste, soumis à `ssf`, est refusé par l'API server **avant toute création** :
+
+```
+Error from server (Forbidden): pods "node-pwn" is forbidden: violates PodSecurity "restricted:latest":
+  host namespaces (hostPID=true),
+  privileged (container "pwn" must not set securityContext.privileged=true),
+  allowPrivilegeEscalation != false,
+  unrestricted capabilities (must set capabilities.drop=["ALL"]),
+  restricted volume types (volume "host-root" uses restricted volume type "hostPath"),
+  runAsNonRoot != true,
+  runAsUser=0 (must not set runAsUser=0),
+  seccompProfile (must set seccompProfile.type to "RuntimeDefault" or "Localhost")
+```
+
+Huit règles violées, huit refus. Aucun conteneur créé, aucun nœud exposé.
+
+### Ce que ça prouve
+
+| | `default` (non durci) | `ssf` (durci par Terraform) |
+|---|---|---|
+| Le pod privilégié | démarre | refusé à l'admission |
+| `/etc/shadow` du nœud | lu | inatteignable |
+| Processus de l'hôte | visibles | inatteignables |
+| Résultat | nœud compromis | attaque bloquée |
+
+**La seule différence entre ces deux namespaces, ce sont trois labels que Terraform a posés sur
+l'un et pas sur l'autre.** Pas l'application, pas le réseau : trois lignes d'infrastructure as
+code, dans le module `namespace`. C'est la réponse concrète à « pourquoi Terraform, pour un
+projet aussi petit ». Le durcissement n'est pas un fichier qu'on applique une fois et qu'on
+oublie ; c'est du code, versionné, rejouable, et vérifiable par une attaque.
+
 ## État en fin de jalon
 
 - Terraform crée et configure le cluster ; `make infra-up` / `make infra-down`, plan affiché, confirmation demandée
@@ -155,6 +221,7 @@ requests.memory  0     1Gi
 - CI : 7 jobs verts, dont `iac` (fmt, validate, Checkov → Security, trivy config)
 - Images publiées sur GHCR à chaque push sur `main`, taguées par SHA, sans secret
 - Preuve d'admission : pod root refusé, quota en place
+- Démonstration avant/après : évasion `hostPath` réussie dans `default`, bloquée dans `ssf` — `make attack-escape`
 
 ## Ce qui reste ouvert, et pourquoi
 
