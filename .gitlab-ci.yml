@@ -45,9 +45,9 @@ checkov:
   stage: sast
   image: bridgecrew/checkov:latest
   script:
-    - checkov -d infra/terraform --framework terraform --quiet --compact -o cli -o gitlab_sast --output-file-path console,checkov-out
+    - checkov -d infra/terraform --framework terraform --quiet --compact -o cli -o gitlab_sast --output-file-path console,checkov-gl-sast.json
   artifacts:
-    reports: { sast: checkov-out/results_gitlab_sast.json }
+    reports: { sast: checkov-gl-sast.json }
 
 semgrep:
   stage: sast

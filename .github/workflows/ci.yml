@@ -90,12 +90,13 @@ jobs:
           done
       - name: checkov (IaC) — même image que `make infra-lint`
         run: |
+          # Avec une seule sortie fichier, le second chemin EST le fichier (pas un dossier).
           docker run --rm -v "$PWD:/src" -w /src bridgecrew/checkov \
             -d infra/terraform --framework terraform --quiet --compact \
-            -o cli -o sarif --output-file-path console,checkov-out
+            -o cli -o sarif --output-file-path console,checkov.sarif
       - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         if: always()
-        with: { sarif_file: checkov-out/results_sarif.sarif, category: checkov }
+        with: { sarif_file: checkov.sarif, category: checkov }
       - name: trivy config (IaC)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
