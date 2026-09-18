@@ -13,7 +13,13 @@ VENV := app/api/.venv
 PY   := $(VENV)/bin/python
 export PATH := $(CURDIR)/$(VENV)/bin:$(PATH)
 
-.PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools
+TF_CLUSTER  := infra/terraform/cluster
+TF_PLATFORM := infra/terraform/platform
+KUBECONFIG_SSF := $(HOME)/.kube/ssf-dev
+KUBECTL := kubectl --kubeconfig $(KUBECONFIG_SSF) --context kind-ssf-dev
+
+.PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools \
+        infra-up infra-plan infra-down infra-lint infra-proof
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -76,3 +82,37 @@ clean: down ## Supprime images locales
 
 install-tools: ## Installe l'outillage sous WSL (terraform, kubectl, kind, helm, trivy, ...)
 	bash scripts/install-tools.sh
+
+# ---------------------------------------------------------------------------
+# Infrastructure : Terraform → kind (couche cluster) puis config (couche platform)
+# ---------------------------------------------------------------------------
+
+infra-up: ## Crée le cluster kind puis applique la couche platform (demande confirmation)
+	cd $(TF_CLUSTER) && terraform init -input=false && terraform apply -input=false
+	@# Le namespace de l'état distant est le seul objet créé hors Terraform : il doit exister avant l'init.
+	$(KUBECTL) create namespace terraform-state --dry-run=client -o yaml | $(KUBECTL) apply -f -
+	cd $(TF_PLATFORM) && terraform init -input=false -backend-config="config_path=$(KUBECONFIG_SSF)" \
+	  && terraform apply -input=false -var-file=dev.tfvars
+
+infra-plan: ## Plan de la couche platform, sans appliquer
+	cd $(TF_PLATFORM) && terraform plan -input=false -var-file=dev.tfvars
+
+infra-down: ## Détruit platform puis le cluster (demande confirmation)
+	-cd $(TF_PLATFORM) && terraform destroy -input=false -var-file=dev.tfvars
+	cd $(TF_CLUSTER) && terraform destroy -input=false
+
+infra-lint: ## fmt, validate, checkov, trivy config — ce que la CI exécute sur le code Terraform
+	terraform fmt -check -recursive -diff infra/terraform
+	@for d in cluster platform modules/namespace; do \
+	  echo "== validate $$d"; \
+	  (cd infra/terraform/$$d && terraform init -backend=false -input=false >/dev/null && terraform validate) || exit 1; \
+	done
+	docker run --rm -v "$(CURDIR):/src" -w /src bridgecrew/checkov -d infra/terraform --framework terraform --quiet --compact
+	trivy config --exit-code 1 --severity HIGH,CRITICAL infra/terraform
+
+infra-proof: ## Preuve PSS : un pod root doit être refusé à l'admission dans le namespace ssf
+	$(KUBECTL) get namespaces ssf security --show-labels
+	@echo; echo "== Tentative de pod root sans securityContext dans ssf (doit être REFUSÉE) :"
+	-$(KUBECTL) -n ssf run pss-probe --image=busybox:1.37 --restart=Never --command -- sleep 5
+	@echo; echo "== Quota et limites du namespace :"
+	$(KUBECTL) -n ssf describe quota quota | sed -n '1,12p'

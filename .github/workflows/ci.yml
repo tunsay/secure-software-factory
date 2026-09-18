@@ -11,6 +11,8 @@ on:
 permissions:
   contents: read
   security-events: write # upload SARIF vers l'onglet Security
+  packages: write        # push des images vers ghcr.io (sur main uniquement)
+  id-token: write        # token OIDC — Cosign keyless (jalon 4)
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -71,6 +73,37 @@ jobs:
         if: always()
         with: { sarif_file: semgrep.sarif }
 
+  iac:
+    name: terraform · fmt / validate / checkov / trivy config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with: { terraform_version: "1.16.2", terraform_wrapper: false }
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff infra/terraform
+      - name: terraform validate
+        run: |
+          for d in cluster platform modules/namespace; do
+            echo "== $d"
+            (cd infra/terraform/$d && terraform init -backend=false -input=false >/dev/null && terraform validate)
+          done
+      - name: checkov (IaC) — même image que `make infra-lint`
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src bridgecrew/checkov \
+            -d infra/terraform --framework terraform --quiet --compact \
+            -o cli -o sarif --output-file-path console,checkov-out
+      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        if: always()
+        with: { sarif_file: checkov-out/results_sarif.sarif, category: checkov }
+      - name: trivy config (IaC)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: infra/terraform
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
   images:
     name: build + trivy · ${{ matrix.svc }}
     needs: [api, web]
@@ -114,3 +147,21 @@ jobs:
         with:
           sarif_file: trivy-${{ matrix.svc }}.sarif
           category: trivy-${{ matrix.svc }}
+
+      # --- Publication vers GHCR, sur main uniquement, après tous les contrôles -------------
+      # Authentification par le GITHUB_TOKEN du job : aucun secret créé ni stocké (ADR 0004).
+      - name: login ghcr.io
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: push ghcr.io (tag = SHA du commit, jamais latest)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: app/${{ matrix.svc }}
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/ssf-${{ matrix.svc }}:${{ github.sha }}
+          cache-from: type=gha

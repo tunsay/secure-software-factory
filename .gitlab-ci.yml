@@ -34,6 +34,21 @@ web:
     - npm audit --audit-level=high
     - npm run build
 
+iac:
+  stage: sast
+  image: hashicorp/terraform:1.16.2
+  script:
+    - terraform fmt -check -recursive -diff infra/terraform
+    - for d in cluster platform modules/namespace; do (cd infra/terraform/$d && terraform init -backend=false -input=false >/dev/null && terraform validate) || exit 1; done
+
+checkov:
+  stage: sast
+  image: bridgecrew/checkov:latest
+  script:
+    - checkov -d infra/terraform --framework terraform --quiet --compact -o cli -o gitlab_sast --output-file-path console,checkov-out
+  artifacts:
+    reports: { sast: checkov-out/results_gitlab_sast.json }
+
 semgrep:
   stage: sast
   image: semgrep/semgrep

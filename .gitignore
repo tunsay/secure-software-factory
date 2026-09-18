@@ -11,13 +11,13 @@ node_modules/
 dist/
 .vite/
 
-# Terraform — le state ne doit JAMAIS être commité
+# Terraform — le state ne doit JAMAIS être commité ; .terraform.lock.hcl, lui, l'est
 *.tfstate
 *.tfstate.*
+*.tfplan
 .terraform/
-.terraform.lock.hcl.bak
-*.tfvars
-!*.example.tfvars
+*secret*.tfvars
+*.auto.tfvars
 crash.log
 
 # Kubernetes / secrets locaux
