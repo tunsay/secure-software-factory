@@ -30,8 +30,8 @@ GitHub Actions + GitLab CI en miroir, GHCR.
 **Première action du jalon 3, à faire à la main par Tunsay :** rendre les deux paquets GHCR
 (`ssf-api`, `ssf-web`) publics dans l'interface GitHub, sinon kind ne peut pas tirer les images.
 
-Le plan complet des 6 jalons est un artefact publié (pas dans le dépôt). Jalons 4-6 : SBOM +
-signature Cosign keyless + scan IaC (déjà partiellement là) ; Kyverno + ArgoCD ; observabilité
+Le plan directeur complet des 6 jalons est dans `docs/rapport/plan.md`. Jalons 4-6 : SBOM +
+signature Cosign keyless + digests (scan IaC déjà là) ; Kyverno + ArgoCD ; observabilité
 Prometheus/Grafana + DAST ZAP + modèle de menaces.
 
 ## Commandes (toutes depuis WSL Ubuntu, dans /mnt/c/Users/tunas/Documents/Code/secure-software-factory)

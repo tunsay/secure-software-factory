@@ -2,8 +2,9 @@
 
 Un chapitre par jalon, rédigé à la fin de chaque jalon, versionné avec le code.
 
-| Chapitre | Contenu |
+| Document | Contenu |
 |---|---|
+| [plan](plan.md) | Plan directeur des six jalons — vue d'ensemble et détail de chacun |
 | [00-contexte](00-contexte.md) | Analyse de 10 offres, choix de la stack, contraintes |
 | [01-jalon-1](01-jalon-1.md) | Socle applicatif, chaîne de contrôle, incidents, tests d'intrusion |
 | [02-jalon-2](02-jalon-2.md) | Terraform pilote le cluster kind, namespaces PSS, backend distant, GHCR, job IaC — six incidents |
