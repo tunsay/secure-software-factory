@@ -123,7 +123,10 @@ jobs:
 
   images:
     name: build + trivy · ${{ matrix.svc }}
-    needs: [api, web]
+    # Tous les contrôles, pas seulement ceux du code applicatif : ce job publie sur GHCR.
+    # Jusqu'au jalon 3, seuls api et web étaient requis, et une image a été publiée alors que
+    # semgrep échouait (journal jalon 3, incident I7).
+    needs: [secrets, api, web, semgrep, iac]
     runs-on: ubuntu-latest
     strategy:
       matrix:

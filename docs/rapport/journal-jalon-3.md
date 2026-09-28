@@ -155,6 +155,60 @@ est protégé.
 - **Leçon** : un journal de sécurité parle de secrets ; il doit le faire sans en reproduire la
   forme.
 
+#### I6 — CI rouge depuis dix jours : semgrep bloque sur deux fichiers du jalon 2
+
+- **Symptôme** : après le push du jalon 3a, le job `semgrep` échoue. Tous les autres sont verts,
+  y compris la nouvelle vérification du chart. Reproduit à l'identique en local
+  (`make semgrep`, même image, mêmes règles) :
+  ```
+  docs/rapport/02-jalon-2.md
+    generic.secrets.security.detected-etc-shadow  (Blocking)
+    168┆ root:*:20430:0:99999:7:::
+  security/attacks/hostpath-escape.yaml
+    yaml.kubernetes.security.allow-privilege-escalation  (Blocking)
+    23┆ securityContext:
+  ```
+- **Cause** : aucun de ces fichiers ne vient du jalon 3. Historique de la CI sur `main` :
+  `c41a991` ✅, **`fde5893` ❌** (démonstration d'attaque, 18/09), `8a5d1dc` ❌, `026e532` ❌.
+  Le commit de la démo a ajouté un extrait de `/etc/shadow` (la preuve de l'évasion) et un
+  manifeste volontairement privilégié. Semgrep a raison sur la forme dans les deux cas.
+- **Diagnostic** : hypothèse initiale fausse (les templates Helm, comme l'incident I4). C'est la
+  reproduction locale qui a donné les fichiers réels, puis l'API GitHub l'historique des runs.
+  Les annotations publiques de GitHub ne donnaient que « exit code 1 » : le détail n'est
+  accessible qu'authentifié, d'où l'intérêt d'avoir une cible `make` qui rejoue la CI à l'identique.
+- **Correction** : deux dérogations **ciblées**, pas d'exclusion de fichier ni de dossier :
+  - commentaire `nosemgrep: <id de règle>` à la ligne exacte, dans le manifeste et dans le rapport ;
+  - entrée dans `security/exceptions.yaml` : règle, fichier, justification, propriétaire,
+    expiration au 31/03/2027.
+  Exclure `docs/` entier aurait été plus simple, mais l'incident I5 vient de montrer qu'un
+  document peut contenir un secret : on garde le scan sur la documentation.
+- **Raté au premier essai** : dans le rapport, `# nosemgrep` avait été ajouté en fin de la ligne
+  `$ kubectl ... /host/etc/shadow`, juste au-dessus de l'alerte. Sans effet : semgrep accepte le
+  commentaire **sur la ligne de l'alerte** (n'importe où), ou sur la **ligne précédente à condition
+  qu'elle ne contienne que le commentaire**. La documentation dit seulement « la ligne
+  précédente » ; c'est `make semgrep` qui a tranché. Corrigé par une ligne `# nosemgrep: ...`
+  seule, entre la commande et sa sortie : les trois lignes de preuve restent intactes.
+- **Leçon** : le commit de la démo était un commit « docs » ; `make scan` n'avait pas été rejoué.
+  La documentation passe par les mêmes contrôles que le code. Et une CI rouge sur `main`
+  pendant dix jours sans que personne ne le voie, c'est un contrôle qui ne contrôle plus rien.
+
+#### I7 — Une image publiée sur GHCR alors que semgrep avait échoué
+
+- **Constat** (en analysant I6) : le job qui construit, scanne et **publie** les images sur GHCR
+  dépendait seulement de `api` et `web` (`needs: [api, web]`). Un échec de semgrep, gitleaks ou
+  du job IaC ne bloquait pas la publication. Preuve : l'image `8a5d1dc`, celle que le jalon 3a
+  déploie, a été publiée alors que semgrep était rouge sur ce commit.
+- **Même défaut côté GitLab** : `needs: [api, web]` court-circuite l'ordre des stages. Sans
+  `needs`, GitLab aurait attendu tous les jobs du stage `sast` ; avec, il n'attend que ceux listés.
+- **Correction** : GitHub `needs: [secrets, api, web, semgrep, iac]` ; GitLab
+  `needs: [gitleaks, api, web, iac, chart, checkov, semgrep]`. Une image n'est plus publiée que si
+  **tous** les contrôles sont verts.
+- **Portée réelle** : faible cette fois — les deux alertes étaient des faux positifs, et l'image
+  elle-même avait passé Trivy. Mais le README annonce une chaîne qui « bloque » : elle ne
+  bloquait pas. Un vrai secret détecté par gitleaks aurait laissé partir l'image quand même.
+- **Leçon** : un contrôle qui ne conditionne pas la livraison n'est qu'un rapport. En CI, le
+  graphe de dépendances des jobs **est** la politique de sécurité : il se relit comme du code.
+
 ### Avant / après — de quoi on est protégé
 
 | | Avant (tutoriel kind classique) | Après (ce projet) |
@@ -164,6 +218,7 @@ est protégé.
 | Exposition réseau | `0.0.0.0` : tout le réseau local | `127.0.0.1` : ce poste uniquement |
 | API | exposée sur son propre port (8000 en compose) | aucune route externe, seulement via le proxy du front |
 | Conteneurs | écriture possible dans l'image | lecture seule : impossible de défigurer le site ou déposer un binaire |
+| Publication des images | possible même si semgrep, gitleaks ou l'IaC échouent (I7) | seulement si **tous** les contrôles sont verts |
 
 ### Preuve — `make app-proof` (28/09/2026)
 

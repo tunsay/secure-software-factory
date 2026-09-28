@@ -1,7 +1,26 @@
 # Dérogations aux gates de sécurité.
 # Chaque entrée : identifiant, outil, justification, propriétaire, date d'expiration.
 # Une dérogation expirée fait échouer la CI (contrôle ajouté en S4).
-exceptions: []
+# Chaque dérogation est aussi marquée à l'endroit exact du code (commentaire nosemgrep, etc.) :
+# on ne désactive jamais une règle pour tout un fichier ou tout un dossier.
+exceptions:
+  - id: yaml.kubernetes.security.allow-privilege-escalation.allow-privilege-escalation
+    tool: semgrep
+    path: security/attacks/hostpath-escape.yaml
+    reason: >-
+      Manifeste d'attaque pédagogique, volontairement privilégié : il sert à prouver que PSS
+      restricted le refuse (make attack-escape). Le durcir annulerait la démonstration.
+    owner: tunsay
+    expires: 2027-03-31
+
+  - id: generic.secrets.security.detected-etc-shadow.detected-etc-shadow
+    tool: semgrep
+    path: docs/rapport/02-jalon-2.md
+    reason: >-
+      Extrait de /etc/shadow d'un nœud kind jetable, cité comme preuve de l'évasion hostPath.
+      Comptes verrouillés (*), aucun condensat de mot de passe.
+    owner: tunsay
+    expires: 2027-03-31
 
 # Exemple de format :
 # - id: CVE-2025-00000

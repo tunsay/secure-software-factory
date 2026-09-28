@@ -68,7 +68,9 @@ semgrep:
   stage: build
   image: docker:27
   services: [docker:27-dind]
-  needs: [api, web]
+  # needs court-circuite l'ordre des stages : lister TOUS les contrôles, pas seulement le code
+  # applicatif (journal jalon 3, incident I7).
+  needs: [gitleaks, api, web, iac, chart, checkov, semgrep]
   script:
     - docker build -t ssf-$SVC:$CI_COMMIT_SHORT_SHA app/$SVC
     - docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.0
