@@ -74,7 +74,7 @@ jobs:
         with: { sarif_file: semgrep.sarif }
 
   iac:
-    name: terraform · fmt / validate / checkov / trivy config
+    name: terraform + chart · fmt / validate / checkov / helm lint / trivy config
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -102,6 +102,22 @@ jobs:
         with:
           scan-type: config
           scan-ref: infra/terraform
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      # Chart de l'app : même contrôle que `make chart-lint`, rendu avec la version déployée.
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with: { version: v3.22.0 }
+      - name: helm lint + rendu du chart
+        run: |
+          TAG=$(sed -n 's/^image_tag *= *"\(.*\)"/\1/p' infra/terraform/platform/dev.tfvars)
+          helm lint k8s/chart --strict --set image.tag="$TAG"
+          mkdir -p rendered
+          helm template ssf k8s/chart --set image.tag="$TAG" > rendered/ssf.yaml
+      - name: trivy config (manifests Kubernetes rendus)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: rendered
           severity: HIGH,CRITICAL
           exit-code: "1"
 

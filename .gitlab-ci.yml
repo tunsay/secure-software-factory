@@ -41,6 +41,14 @@ iac:
     - terraform fmt -check -recursive -diff infra/terraform
     - for d in cluster platform modules/namespace; do (cd infra/terraform/$d && terraform init -backend=false -input=false >/dev/null && terraform validate) || exit 1; done
 
+chart:
+  stage: sast
+  image: { name: alpine/helm:3.22.0, entrypoint: [""] }
+  script:
+    - TAG=$(sed -n 's/^image_tag *= *"\(.*\)"/\1/p' infra/terraform/platform/dev.tfvars)
+    - helm lint k8s/chart --strict --set image.tag="$TAG"
+    - helm template ssf k8s/chart --set image.tag="$TAG" > /dev/null
+
 checkov:
   stage: sast
   image: bridgecrew/checkov:latest

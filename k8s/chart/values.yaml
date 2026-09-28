@@ -1,0 +1,38 @@
+# Valeurs par défaut du chart. Terraform (infra/terraform/platform/app.tf) fournit le reste.
+
+# Empreinte des fichiers du chart, calculée par Terraform. Aucun template ne la lit : elle sert
+# seulement à faire apparaître au plan toute modification du chart local.
+chartChecksum: ""
+
+image:
+  registry: ghcr.io/tunsay
+  # Obligatoire : SHA complet du commit. Le chart refuse une valeur vide ou "latest".
+  tag: ""
+  pullPolicy: IfNotPresent
+
+ingress:
+  # Classe explicite : Traefik n'est pas la classe par défaut du cluster.
+  className: traefik
+
+api:
+  # Une seule réplique : l'API stocke ses items en mémoire. Deux répliques donneraient deux
+  # listes différentes selon le pod qui répond. Voir ADR 0001 : on ne rend pas l'app stateful.
+  replicas: 1
+  port: 8000
+  # UID/GID fixés dans app/api/Dockerfile.
+  uid: 10001
+  env:
+    APP_ENV: dev
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+web:
+  # Sans état : deux répliques, réparties sur les deux workers.
+  replicas: 2
+  port: 8080
+  # UID/GID de l'image nginx-unprivileged.
+  uid: 101
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { cpu: 200m, memory: 128Mi }

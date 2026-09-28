@@ -6,6 +6,12 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = ">= 2.30, < 3.0"
     }
+    # 3.x : syntaxe « objets imbriqués » (kubernetes = { ... }, set = [{ ... }]), incompatible
+    # avec les exemples 2.x encore majoritaires en ligne.
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 3.3"
+    }
   }
 
   # État distant : stocké dans un Secret du cluster, verrou par Lease.

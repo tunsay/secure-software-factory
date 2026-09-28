@@ -60,12 +60,14 @@ Preuve : pod root refusé à l'admission ; démonstration avant/après (`make at
 
 Découpé en deux livrables présentables séparément.
 
-**Prérequis manuel** : rendre les paquets GHCR `ssf-api` et `ssf-web` publics dans GitHub, sinon
-kind ne peut pas tirer les images.
+Prérequis : paquets GHCR `ssf-api` et `ssf-web` publics — vérifié, c'était déjà le cas.
 
 ### 3a — l'application tourne dans le cluster
 
-- Chart Helm maison (deployment, service, ingress sur 8081, HPA), installé par le provider `helm`.
+- Chart Helm maison (deployment, service, ingress sur 8081), installé par le provider `helm`.
+  Pas de HPA : l'API stocke en mémoire (une seule réplique possible), pas de metrics-server.
+- Ingress controller Traefik exposé par NodePort, en PSS restricted (ADR 0007) —
+  ingress-nginx est retiré depuis mars 2026.
 - Déploiement de l'app depuis GHCR dans le namespace `ssf`, conforme à PSS restricted
   (securityContext complet : runAsNonRoot, drop ALL, seccomp, allowPrivilegeEscalation=false).
 - `http://localhost:8081` répond depuis un pod durci.

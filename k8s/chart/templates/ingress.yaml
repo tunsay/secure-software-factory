@@ -1,0 +1,20 @@
+# Point d'entrée unique : tout le trafic va au web. /api/ est relayé par nginx vers le Service
+# api, qui n'a donc aucune route directe depuis l'extérieur du cluster.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  labels:
+    {{- include "ssf.labels" (list . "web") | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  name: http

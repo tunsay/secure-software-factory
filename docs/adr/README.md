@@ -11,3 +11,4 @@ est remplacée par un nouvel ADR qui la référence.
 | [0004](0004-terraform-sans-fournisseur-cloud.md) | Terraform pilote le cluster local, registre GHCR, sans fournisseur cloud | accepté |
 | 0005 | Python/FastAPI plutôt que Go pour le back | à rédiger |
 | 0006 | GitHub Actions en référence, GitLab CI maintenu en miroir | à rédiger |
+| [0007](0007-ingress-traefik-nodeport.md) | Ingress : Traefik exposé par NodePort, sans exception PSS | accepté |

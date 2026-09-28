@@ -1,0 +1,71 @@
+# API FastAPI. Le Service s'appelle « api » : c'est le nom que nginx (app/web/nginx.conf)
+# utilise pour relayer /api/. Il n'est pas exposé par l'Ingress : on ne l'atteint que via le web.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels:
+    {{- include "ssf.labels" (list . "api") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "ssf.selectorLabels" (list . "api") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.api.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    {{- include "ssf.labels" (list . "api") | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "ssf.selectorLabels" (list . "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ssf.labels" (list . "api") | nindent 8 }}
+    spec:
+      # Pas de variables d'environnement *_SERVICE_HOST pour chaque Service du namespace :
+      # l'app n'en a pas besoin, et c'est une cartographie offerte à qui lit l'environnement.
+      enableServiceLinks: false
+      securityContext:
+        {{- include "ssf.podSecurityContext" .Values.api.uid | nindent 8 }}
+      containers:
+        - name: api
+          image: {{ include "ssf.image" (list . "api") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.port }}
+          env:
+            {{- range $k, $v := .Values.api.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          securityContext:
+            {{- include "ssf.containerSecurityContext" . | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Seul emplacement inscriptible, en mémoire, effacé avec le pod (tmpfs de compose).
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi

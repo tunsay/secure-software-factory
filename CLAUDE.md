@@ -27,8 +27,9 @@ GitHub Actions + GitLab CI en miroir, GHCR.
   prouver que l'API ne peut plus joindre le front — l'« après » du test réseau du jalon 1).
   Sealed Secrets + kube-bench en bonus ou reportés au jalon 5.
 
-**Première action du jalon 3, à faire à la main par Tunsay :** rendre les deux paquets GHCR
-(`ssf-api`, `ssf-web`) publics dans l'interface GitHub, sinon kind ne peut pas tirer les images.
+Les paquets GHCR `ssf-api` et `ssf-web` sont publics (vérifié le 28/09 : tirage anonyme OK).
+Ingress : Traefik par NodePort, pas ingress-nginx (retiré en mars 2026) — ADR 0007.
+Journal des incidents du jalon en cours : `docs/rapport/journal-jalon-3.md`.
 
 Le plan directeur complet des 6 jalons est dans `docs/rapport/plan.md`. Jalons 4-6 : SBOM +
 signature Cosign keyless + digests (scan IaC déjà là) ; Kyverno + ArgoCD ; observabilité
@@ -45,6 +46,8 @@ make infra-down    # détruit platform puis le cluster
 make infra-lint    # fmt, validate, checkov, trivy config
 make infra-proof   # preuve : pod root refusé par PSS dans le namespace ssf
 make attack-escape # démo avant/après : évasion hostPath réussie dans default, bloquée dans ssf
+make chart-lint    # helm lint + rendu + trivy du chart k8s/chart (inclus dans infra-lint)
+make app-proof     # preuve 3a : app servie par Traefik sur 127.0.0.1:8081, pods non-root, lecture seule
 ```
 
 Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make infra-up`.

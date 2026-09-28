@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ssf
+description: Secure Software Factory — web (React/nginx) et api (FastAPI), conformes à PSS restricted.
+type: application
+# Version du chart (le packaging), distincte de la version de l'app (image.tag).
+version: 0.1.0

@@ -37,9 +37,31 @@ variable "worker_count" {
   }
 }
 
+variable "ingress_http_node_port" {
+  description = "NodePort HTTP du Service Traefik. Doit être identique à la variable du même nom dans la couche platform."
+  type        = number
+  default     = 30080
+
+  validation {
+    condition     = var.ingress_http_node_port >= 30000 && var.ingress_http_node_port <= 32767
+    error_message = "Un NodePort est compris entre 30000 et 32767."
+  }
+}
+
+variable "ingress_https_node_port" {
+  description = "NodePort HTTPS du Service Traefik. Doit être identique à la variable du même nom dans la couche platform."
+  type        = number
+  default     = 30443
+
+  validation {
+    condition     = var.ingress_https_node_port >= 30000 && var.ingress_https_node_port <= 32767
+    error_message = "Un NodePort est compris entre 30000 et 32767."
+  }
+}
+
 variable "ingress_http_port" {
   description = <<-EOT
-    Port hôte relié au port 80 du control-plane (ingress).
+    Port hôte relié au NodePort HTTP de l'ingress, sur 127.0.0.1 uniquement.
     Pas 80 : sur Windows, 80 et 443 sont fréquemment réservés (service HTTP système, plages
     exclues Hyper-V) et le relais de Docker Desktop refuse de les publier. Pas 8080/8000 : ce sont
     ceux de docker compose, les deux environnements doivent coexister.
@@ -49,7 +71,7 @@ variable "ingress_http_port" {
 }
 
 variable "ingress_https_port" {
-  description = "Port hôte relié au port 443 du control-plane (ingress). Voir ingress_http_port."
+  description = "Port hôte relié au NodePort HTTPS de l'ingress, sur 127.0.0.1 uniquement. Voir ingress_http_port."
   type        = number
   default     = 8444
 }

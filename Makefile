@@ -18,8 +18,12 @@ TF_PLATFORM := infra/terraform/platform
 KUBECONFIG_SSF := $(HOME)/.kube/ssf-dev
 KUBECTL := kubectl --kubeconfig $(KUBECONFIG_SSF) --context kind-ssf-dev
 
+# Chart de l'app, rendu avec la version réellement déployée (lue dans dev.tfvars).
+CHART     := k8s/chart
+CHART_TAG := $(shell sed -n 's/^image_tag *= *"\(.*\)"/\1/p' $(TF_PLATFORM)/dev.tfvars)
+
 .PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools \
-        infra-up infra-plan infra-down infra-lint infra-proof attack-escape
+        infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -101,7 +105,26 @@ infra-down: ## Détruit platform puis le cluster (demande confirmation)
 	-cd $(TF_PLATFORM) && terraform destroy -input=false -var-file=dev.tfvars
 	cd $(TF_CLUSTER) && terraform destroy -input=false
 
-infra-lint: ## fmt, validate, checkov, trivy config — ce que la CI exécute sur le code Terraform
+chart-lint: ## Lint et rendu du chart Helm, scan trivy des manifests rendus
+	helm lint $(CHART) --strict --set image.tag=$(CHART_TAG)
+	helm template ssf $(CHART) --set image.tag=$(CHART_TAG) > /dev/null
+	trivy config --exit-code 1 --severity HIGH,CRITICAL --helm-set image.tag=$(CHART_TAG) $(CHART)
+
+app-proof: ## Preuve 3a : l'app répond via l'ingress, depuis des pods durcis
+	$(KUBECTL) -n ssf get pods -o wide
+	@echo; echo "== Front, via Traefik :"
+	curl -fsS http://127.0.0.1:8081/healthz; echo
+	@echo "== API, via le proxy nginx du front (l'Ingress ne route que vers web) :"
+	curl -fsS http://127.0.0.1:8081/api/health; echo
+	@echo; echo "== Identité des processus (ni root, ni groupe root) :"
+	$(KUBECTL) -n ssf exec deploy/web -- id
+	$(KUBECTL) -n ssf exec deploy/api -- id
+	@echo; echo "== Remplacer la page d'accueil depuis le conteneur (doit ÉCHOUER, lecture seule) :"
+	-$(KUBECTL) -n ssf exec deploy/web -- sh -c 'echo defaced > /usr/share/nginx/html/index.html'
+	@echo; echo "== Ports publiés par le cluster (127.0.0.1 : rien d'exposé au réseau local) :"
+	docker port ssf-dev-control-plane
+
+infra-lint: chart-lint ## fmt, validate, checkov, trivy config — ce que la CI exécute sur le code Terraform
 	terraform fmt -check -recursive -diff infra/terraform
 	@for d in cluster platform modules/namespace; do \
 	  echo "== validate $$d"; \

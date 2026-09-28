@@ -1,6 +1,8 @@
 # Cluster kind : un control-plane, N workers, image épinglée par digest.
-# Les ports 80/443 du control-plane sont exposés sur l'hôte pour l'ingress (jalon 3).
-# Pas 8080/8000 : ce sont ceux de docker compose, les deux environnements doivent coexister.
+# L'ingress (Traefik, jalon 3) est joint par un Service NodePort : kube-proxy ouvre le port
+# sur chaque nœud, et seul celui du control-plane est relié à l'hôte. Aucun pod n'a besoin de
+# hostPort, interdit par PSS restricted : l'ingress controller tourne sans exception.
+# Pas 8080/8000 côté hôte : ce sont ceux de docker compose, les deux environnements coexistent.
 
 resource "kind_cluster" "this" {
   name            = var.cluster_name
@@ -15,30 +17,22 @@ resource "kind_cluster" "this" {
     node {
       role = "control-plane"
 
-      # Étiquette utilisée par l'ingress controller pour se placer sur ce nœud.
-      #
-      # ATTENTION au format : il dépend de la bibliothèque kind EMBARQUÉE dans le provider,
-      # pas du kind installé sur le poste. Provider 0.11.0 -> kind 0.31 -> kubeadm v1beta3,
-      # où kubeletExtraArgs est une map. Le kind 0.33 en ligne de commande génère du v1beta4,
-      # où c'est une liste name/value : le même patch y échouerait, et inversement.
-      # Diagnostic : `kind-0.31 create cluster --retain` puis lire "Command Output".
-      kubeadm_config_patches = [
-        <<-EOT
-        kind: InitConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
-            node-labels: "ingress-ready=true"
-        EOT
-      ]
+      # Plus de patch kubeadm (étiquette ingress-ready) depuis le jalon 3 : avec un NodePort,
+      # l'ingress n'a plus à tourner sur ce nœud. Le patch était aussi le point le plus fragile
+      # du cluster (format map/liste selon la version de kind embarquée, voir rapport jalon 2).
 
+      # listen_address 127.0.0.1 : l'app n'est joignable que depuis ce poste, pas depuis le
+      # réseau local. Par défaut kind publie sur 0.0.0.0, soit toutes les interfaces.
       extra_port_mappings {
-        container_port = 80
+        container_port = var.ingress_http_node_port
         host_port      = var.ingress_http_port
+        listen_address = "127.0.0.1"
         protocol       = "TCP"
       }
       extra_port_mappings {
-        container_port = 443
+        container_port = var.ingress_https_node_port
         host_port      = var.ingress_https_port
+        listen_address = "127.0.0.1"
         protocol       = "TCP"
       }
     }

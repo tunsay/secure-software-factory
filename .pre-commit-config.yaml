@@ -21,9 +21,21 @@ repos:
       - id: trailing-whitespace
       - id: check-yaml
         args: [--allow-multiple-documents]
+        # Les templates Helm ne sont pas du YAML ({{- ... }}) : validés par le hook chart-lint.
+        exclude: ^k8s/chart/templates/
       - id: check-added-large-files
         args: [--maxkb=500]
       - id: detect-private-key
+
+  # Chart de l'app : helm lint, rendu et trivy, uniquement quand un fichier du chart change.
+  - repo: local
+    hooks:
+      - id: chart-lint
+        name: chart-lint (helm lint + rendu + trivy)
+        entry: make chart-lint
+        language: system
+        files: ^k8s/chart/
+        pass_filenames: false
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v3.6.0
