@@ -206,6 +206,18 @@ est protégé.
 - **Portée réelle** : faible cette fois — les deux alertes étaient des faux positifs, et l'image
   elle-même avait passé Trivy. Mais le README annonce une chaîne qui « bloque » : elle ne
   bloquait pas. Un vrai secret détecté par gitleaks aurait laissé partir l'image quand même.
+- **Vérification** (run 36415170310, commit `654dc37`, CI verte pour la première fois depuis le
+  18/09) — horaires des jobs lus via l'API GitHub :
+  ```
+  11:21:33 -> 11:22:24  terraform + chart     (le plus long des contrôles)
+  11:21:33 -> 11:21:42  gitleaks
+  11:21:34 -> 11:21:52  web
+  11:21:34 -> 11:22:01  api
+  11:21:34 -> 11:22:07  semgrep
+  11:22:26 -> 11:23:46  build + trivy · web   <- démarre après le DERNIER contrôle
+  11:22:27 -> 11:23:17  build + trivy · api
+  ```
+  La publication attend désormais la fin de tous les contrôles, pas seulement de `api` et `web`.
 - **Leçon** : un contrôle qui ne conditionne pas la livraison n'est qu'un rapport. En CI, le
   graphe de dépendances des jobs **est** la politique de sécurité : il se relit comme du code.
 
