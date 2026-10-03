@@ -14,3 +14,4 @@ est remplacée par un nouvel ADR qui la référence.
 | [0007](0007-ingress-traefik-nodeport.md) | Ingress : Traefik exposé par NodePort, sans exception PSS | accepté |
 | [0008](0008-cloisonnement-reseau-et-droits.md) | Cloisonnement : NetworkPolicies et droits portés par la plateforme | accepté |
 | [0009](0009-preuve-reseau-en-ci-ephemere.md) | Cloisonnement réseau prouvé sur cluster éphémère en CI, kindnet conservé | accepté |
+| [0010](0010-signature-sans-cle-et-sbom.md) | Images signées sans clé, SBOM attesté, publication de l'image scannée | accepté |

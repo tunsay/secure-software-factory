@@ -23,7 +23,7 @@ CHART     := k8s/chart
 CHART_TAG := $(shell sed -n 's/^image_tag *= *"\(.*\)"/\1/p' $(TF_PLATFORM)/dev.tfvars)
 
 .PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools \
-        infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof isolation-proof isolation-check
+        infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof isolation-proof isolation-check supply-chain-proof
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -156,6 +156,9 @@ isolation-proof: ## Preuve 3b : flux réseau et identités — même commande av
 	  $(KUBECTL) auth can-i list secrets -n terraform-state --as=system:serviceaccount:ingress:traefik || true
 	@printf '   Secrets de tout le cluster                            : '; \
 	  $(KUBECTL) auth can-i list secrets --all-namespaces --as=system:serviceaccount:ingress:traefik || true
+
+supply-chain-proof: ## Preuve jalon 4 : signature, SBOM, digests — même commande avant et après
+	@bash scripts/supply-chain-proof.sh
 
 # Verdicts attendus après durcissement, dans l'ordre des tests de isolation-proof.
 ISOLATION_EXPECTED := BLOQUÉ BLOQUÉ BLOQUÉ OUVERT OUVERT BLOQUÉ BLOQUÉ no no

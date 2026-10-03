@@ -1,6 +1,6 @@
-# Pipeline de référence — version semaine 1.
-# Étages : secrets → lint/SAST → SCA → tests → build → scan image.
-# S4 ajoutera : Checkov (IaC), SBOM Syft, signature Cosign, épinglage des actions par SHA.
+# Pipeline de référence.
+# Étages : secrets → lint/SAST → SCA → IaC → tests → build → scan image → publication de l'image
+# scannée → SBOM → signature et attestation → vérification (jalon 4).
 #
 # Machines figées en ubuntu-24.04, jamais ubuntu-latest : même logique que les actions épinglées
 # par SHA. ubuntu-latest bascule vers Ubuntu 26.04 entre le 19/10 et le 19/11/2026 ; une montée
@@ -181,11 +181,79 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: push ghcr.io (tag = SHA du commit, jamais latest)
+      # On publie l'image chargée, celle que le smoke test et Trivy viennent de contrôler, sans la
+      # reconstruire. Jusqu'au jalon 3, une seconde construction (depuis le cache) était publiée :
+      # ce qui était scanné et ce qui partait au registre étaient deux constructions distinctes.
+      - name: publier l'image scannée (tag = SHA du commit, jamais latest)
+        id: publish
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        env:
+          LOCAL: ssf-${{ matrix.svc }}:${{ github.sha }}
+          REPO: ghcr.io/${{ github.repository_owner }}/ssf-${{ matrix.svc }}
+          TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker tag "$LOCAL" "$REPO:$TAG"
+          docker push "$REPO:$TAG"
+          DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$REPO:$TAG")"
+          DIGEST="${DIGEST#*@}"
+          # Preuve : la configuration de l'image publiée est celle de l'image scannée.
+          test "$(docker buildx imagetools inspect --raw "$REPO@$DIGEST" | jq -r .config.digest)" \
+             = "$(docker image inspect --format '{{.Id}}' "$LOCAL")"
+          # ref : forme canonique (digest seul), pour signer et décrire.
+          # deploy : forme lisible tag@digest, pour le déploiement (le tag y est informatif).
+          echo "ref=$REPO@$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "deploy=$REPO:$TAG@$DIGEST" >> "$GITHUB_OUTPUT"
+
+      # --- Chaîne d'approvisionnement (jalon 4, ADR 0010) ---------------------------------------
+      - name: SBOM CycloneDX de l'image publiée (Syft)
+        if: steps.publish.outcome == 'success'
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          context: app/${{ matrix.svc }}
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/ssf-${{ matrix.svc }}:${{ github.sha }}
-          cache-from: type=gha
+          image: ${{ steps.publish.outputs.ref }}
+          format: cyclonedx-json
+          output-file: sbom-${{ matrix.svc }}.cdx.json
+          artifact-name: sbom-${{ matrix.svc }}.cdx.json
+          # Délai de carence de 7 jours, comme pour Dependabot : la v1.54.0 avait 2 jours.
+          syft-version: v1.52.0
+          upload-release-assets: false
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: steps.publish.outcome == 'success'
+        with: { cosign-release: v3.1.3 }
+
+      # Signature sans clé : Fulcio délivre un certificat de quelques minutes à l'identité OIDC de
+      # ce workflow (id-token: write), et la signature est inscrite au journal public Rekor.
+      # Aucune clé créée, stockée, à protéger ni à faire tourner. On signe le digest, jamais le tag.
+      - name: signer l'image et attester son SBOM (Cosign, sans clé)
+        if: steps.publish.outcome == 'success'
+        env:
+          REF: ${{ steps.publish.outputs.ref }}
+          SVC: ${{ matrix.svc }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "$REF"
+          cosign attest --yes --type cyclonedx --predicate "sbom-$SVC.cdx.json" "$REF"
+
+      # Même règle que la preuve locale (make supply-chain-proof) et que Kyverno au jalon 5 :
+      # signée par CE workflow, sur main, et par aucune autre identité.
+      - name: vérifier signature et attestation (identité exacte)
+        if: steps.publish.outcome == 'success'
+        env:
+          REF: ${{ steps.publish.outputs.ref }}
+          DEPLOY: ${{ steps.publish.outputs.deploy }}
+          SVC: ${{ matrix.svc }}
+          SIGNER: https://github.com/${{ github.repository }}/.github/workflows/ci.yml@refs/heads/main
+          ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          set -euo pipefail
+          cosign verify --certificate-identity "$SIGNER" --certificate-oidc-issuer "$ISSUER" "$REF" > /dev/null
+          cosign verify-attestation --type cyclonedx --certificate-identity "$SIGNER" \
+            --certificate-oidc-issuer "$ISSUER" "$REF" > /dev/null
+          # Référence à reporter dans infra/terraform/platform/dev.tfvars pour la déployer.
+          {
+            echo "### ssf-$SVC : publiée, signée, SBOM attesté"
+            echo '```'
+            echo "$DEPLOY"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

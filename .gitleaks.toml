@@ -1,0 +1,21 @@
+# Configuration gitleaks : les règles par défaut, plus une seule exception, documentée.
+# Lue automatiquement par le hook pre-commit (gitleaks v8.21.2), par la CI (gitleaks-action
+# v3.0.0, gitleaks v8.24.3) et par `make scan`.
+#
+# [extend] useDefault est indispensable : sans lui, ce fichier REMPLACERAIT les règles par défaut
+# et gitleaks ne détecterait plus rien, sans le moindre message.
+# Syntaxe [allowlist] (forme simple) : comprise par les deux versions en service. La forme
+# [[allowlists]] des versions récentes serait ignorée par la v8.21.2 du hook.
+
+[extend]
+useDefault = true
+
+# Faux positif de la règle generic-api-key (journal du jalon 4, incident J4-I1). Nos images
+# s'appellent ssf-api et ssf-web et sont taguées par le SHA complet du commit (40 caractères
+# hexadécimaux) : « api » suivi d'une longue chaîne aléatoire ressemble à une clé d'API. Un SHA de
+# commit est public par nature. L'exception ne vaut que pour une ligne contenant le tag d'une de
+# NOS images ; toutes les autres règles et tous les autres fichiers restent contrôlés.
+[allowlist]
+description = "Tags des images ssf-api / ssf-web : SHA de commit, public"
+regexTarget = "line"
+regexes = ['''ssf-(api|web):[0-9a-f]{40}''']
