@@ -293,12 +293,218 @@ Helm 3.22.0, même branche majeure que la bibliothèque du provider (Helm 3.20).
 
 ## 3b — le cluster est cloisonné
 
-_(à venir)_
+### Vérifications faites avant d'écrire (03/10)
 
-### Pistes déjà notées
+| # | Constat | Conséquence |
+|---|---|---|
+| V1 | **kindnet applique les NetworkPolicies depuis kind 0.24** (août 2024, via `kube-network-policies`). La bibliothèque embarquée par le provider est kind 0.31 : supporté. | On peut s'appuyer sur kindnet. Mais une règle ignorée ne produit aucune erreur : seule la preuve par le test compte. |
+| V2 | Source du chart Traefik 41.6.0 (`templates/rbac/clusterrole.yaml`) : par défaut, une **ClusterRole** donne `get/list/watch` sur **tous les Secrets du cluster**. | « Avant » du test 8. Traefik est le seul composant exposé à l'extérieur : sa compromission ouvrirait tous les secrets. |
+| V3 | Le chart propose `rbac.namespaced: true` (Role par namespace servi). **Piège** (doc Traefik, option `disableClusterScopeResources`) : dans ce mode, Traefik **ignore les Ingress qui référencent une IngressClass** (`spec.ingressClassName`) ; seule l'annotation `kubernetes.io/ingress.class` est prise en compte. | Sans le savoir, on aurait durci Traefik et le site aurait cessé de répondre, sans erreur. À traiter dans la conception. |
 
-- Traefik a une ClusterRole (lecture de tout le cluster). Le restreindre aux namespaces servis.
-- Le token de ServiceAccount est encore monté dans les pods web et api : c'est l'« avant » du RBAC.
-- Vérifier que kindnet applique les NetworkPolicies (support ajouté dans les versions récentes
-  de kind ; la bibliothèque embarquée par le provider est kind 0.31) — une règle ignorée ne
-  produit aucune erreur, d'où l'importance de la preuve par le test.
+### Préparation de la preuve
+
+- `scripts/k8s-probe.py` : sondes **en lecture seule** exécutées dans le pod api (script envoyé
+  sur l'entrée standard, rien n'est copié dans le conteneur). Chaque sonde affiche `OUVERT` ou
+  `BLOQUÉ` et n'échoue jamais : c'est la comparaison avant/après qui fait la preuve.
+- `make isolation-proof` : 8 tests, **même commande avant et après**, sur le modèle de
+  `make attack-escape` (jalon 2). Le test 7 interroge l'API (« qui suis-je ? ») sans jamais
+  afficher le jeton (leçon de l'incident I2). Le test 8 utilise `kubectl auth can-i --as` : on
+  demande si Traefik *aurait* le droit, sans rien lire.
+
+### Petits incidents d'environnement (03/10)
+
+- `make` lancé dans PowerShell : `The term 'make' is not recognized`. `make` et tout l'outillage
+  n'existent que dans WSL.
+- Après `wsl`, le shell s'ouvre dans `/mnt/wsl/docker-desktop-bind-mounts/...` (dossier interne de
+  Docker Desktop), pas dans le projet. Correction : alias `ssf` dans `~/.bashrc`, qui ramène dans
+  le dépôt en une commande.
+- Le cluster a survécu cinq jours (Docker Desktop non redémarré) : reprise immédiate, sans
+  `make infra-up`.
+
+### AVANT — `make isolation-proof` (03/10, avant tout durcissement)
+
+```
+############ RÉSEAU ############
+
+== 1. api -> web : mouvement latéral (après durcissement : BLOQUÉ)
+OUVERT   HTTP 200 depuis http://web:8080/healthz
+
+== 2. api -> Internet : exfiltration, téléchargement d'outil (après : BLOQUÉ)
+OUVERT   HTTP 200 depuis https://example.com
+
+== 3. pod d'un autre namespace (default) -> api (après : BLOQUÉ)
+OUVERT   réponse de api.ssf depuis default
+
+== 4. web -> api : flux légitime (après : toujours OUVERT)
+OUVERT   réponse de api depuis web
+
+== 5. navigateur -> Traefik -> web -> api : chemin complet (après : toujours OUVERT)
+OUVERT   127.0.0.1:8081/api/health
+
+############ IDENTITÉ ############
+
+== 6. jeton Kubernetes monté dans le pod api (après : BLOQUÉ, aucun jeton)
+OUVERT   jeton monté dans /var/run/secrets/kubernetes.io/serviceaccount/
+
+== 7. depuis le pod api, ce jeton s'authentifie auprès de l'API Kubernetes (après : BLOQUÉ)
+OUVERT   authentifié auprès de l'API Kubernetes comme system:serviceaccount:ssf:default
+
+== 8. Traefik peut lire les Secrets hors de ce qu'il sert (après : no)
+   Secrets du namespace terraform-state (état Terraform) : yes
+   Secrets de tout le cluster                            : yes
+```
+
+Lecture, du point de vue d'un attaquant qui a pris la main sur le pod api :
+
+- **1 et 3** : réseau plat. Depuis l'api, il atteint le front ; depuis **n'importe quel pod du
+  cluster**, on atteint l'api. C'est l'« avant » du test réseau du jalon 1 (sous compose, l'api
+  joignait déjà le front), maintenant mesuré dans Kubernetes.
+- **2** : sortie Internet libre. Il peut télécharger ses outils et exfiltrer des données.
+- **6 et 7** : Kubernetes monte par défaut un jeton dans chaque pod, et ce jeton est **accepté**
+  par l'API du cluster. Nuance honnête : le compte `default` n'a aucun droit RBAC à ce stade.
+  Être authentifié n'est pas être autorisé. Mais c'est une porte ouverte sur le composant le plus
+  critique du cluster : la moindre erreur de RBAC future (un RoleBinding sur `default`), ou une
+  faille de l'API server, et ce jeton devient une clé.
+- **8** : Traefik, le seul composant exposé à l'extérieur, peut lire **tous les Secrets du
+  cluster**, y compris celui qui contient l'état Terraform de la couche platform.
+- **4 et 5** : les flux légitimes, qui devront rester ouverts. Ils servent de témoin : un
+  durcissement qui les casse n'est pas un durcissement, c'est une panne.
+
+### Ce qui a été construit (ADR 0008)
+
+| Fichier | Contre quel test |
+|---|---|
+| `platform/network.tf` : 5 NetworkPolicies dans `ssf` — tout fermé, puis Traefik → web, web → api, DNS | 1, 2, 3 (et 4, 5 doivent rester ouverts) |
+| `modules/namespace` : compte `default` sans jeton, dans les trois namespaces | 6, 7 pour tout futur pod |
+| `k8s/chart/templates/serviceaccounts.yaml` : comptes `api` et `web` sans jeton ; `automountServiceAccountToken: false` aussi sur les pods | 6, 7 |
+| `platform/ingress.tf` : Traefik `rbac.namespaced`, ne sert que `ssf` | 8 |
+| `k8s/chart/templates/ingress.yaml` : annotation `kubernetes.io/ingress.class` au lieu de `spec.ingressClassName` | conséquence de V3 |
+
+Choix notables :
+- **Politiques dans Terraform, pas dans le chart** : celui qui déploie l'app (ArgoCD, jalon 5) ne
+  doit pas pouvoir élargir ses propres flux.
+- **Aucune règle de sortie pour api** hors DNS : elle répond, elle n'initie rien.
+- **Jeton refusé deux fois** (compte et pod) : redondance volontaire.
+- **Annotation dépréciée assumée** contre la lecture de tous les Secrets par Traefik (ADR 0008).
+
+### Validation avant application (03/10)
+
+`make infra-lint` vert du premier coup : `helm lint --strict` OK ; trivy **0** sur les quatre
+templates, dont le nouveau `serviceaccounts.yaml` ; `terraform fmt` sans écart ; `validate` OK
+sur les trois dossiers ; Checkov silencieux ; trivy **0** sur `cluster` et `platform`.
+
+### Plan (03/10) : `8 to add, 2 to change, 0 to destroy`
+
+- 8 créations : les 5 NetworkPolicies et le compte `default` des 3 namespaces.
+- Traefik, modifié : `rbac.namespaced: true`, `kubernetesIngress.namespaces: [ssf]` et
+  `ingressClass: traefik`, objet IngressClass désactivé.
+- L'app, modifiée : **seule la valeur `chartChecksum` change** au plan. Les templates (comptes de
+  service, annotation) ne sont pas visibles en tant que tels, mais l'empreinte révèle qu'ils ont
+  bougé. C'est la validation du remplacement retenu à l'incident I3 : sans cette empreinte, le
+  plan aurait affiché l'app « inchangée » et le cluster serait resté sur l'ancienne version.
+
+### Application (03/10) : `8 added, 2 changed, 0 destroyed`
+
+Traefik redéployé en 42 s, l'app en 31 s. Helm attend que les pods soient prêts : les sondes du
+kubelet passent malgré `default-deny` (risque 1 écarté).
+
+### APRÈS — `make isolation-proof`, premier passage
+
+```
+== 1. api -> web          OUVERT   HTTP 200 depuis http://web:8080/healthz
+== 2. api -> Internet     OUVERT   HTTP 200 depuis https://example.com
+== 3. default -> api      OUVERT   réponse de api.ssf depuis default
+== 4. web -> api          OUVERT   réponse de api depuis web
+== 5. chemin complet      OUVERT   127.0.0.1:8081/api/health
+== 6. jeton monté         BLOQUÉ   FileNotFoundError: aucun jeton dans /var/run/secrets/kubernetes.io/serviceaccount/
+== 7. jeton accepté       BLOQUÉ   FileNotFoundError: [Errno 2] No such file or directory: '.../token'
+== 8. Traefik, Secrets    terraform-state : no   ·   tout le cluster : no
+```
+(sortie condensée sur une ligne par test)
+
+**Identité : 3 tests sur 3 passés au vert.** **Réseau : 0 sur 3.** `make app-proof` reste
+entièrement vert (aucune régression du 3a).
+
+#### I8 — Les NetworkPolicies sont créées, acceptées, et n'ont aucun effet
+
+- **Symptôme** : les 5 politiques sont créées sans erreur (`Creation complete`), les pods restent
+  prêts, mais les tests 1, 2 et 3 restent `OUVERT`. Exactement le risque annoncé : une politique
+  ignorée par le réseau ne produit aucune erreur.
+- **Ce que dit la documentation** : kind applique les NetworkPolicies depuis la 0.24 ; le
+  manifeste kindnetd de kind 0.31 (image `kindnetd:v20251212-v0.29.0-alpha-105-g20ccfc88`) donne
+  bien à kindnet le droit de lire les NetworkPolicies.
+- **Ce que disent d'autres projets** : même symptôme rapporté (kind#3705, sur kind 0.23 ;
+  lfreleng-actions/sigul-docker-k8s#26) — politiques acceptées, jamais appliquées.
+- **Hypothèse** : le filtrage de kindnet repose sur nfqueue/nftables dans le noyau ; le noyau
+  WSL2 de Microsoft (5.15.167) pourrait ne pas fournir ces fonctions, et kindnet laisserait alors
+  tout passer.
+- **Diagnostic** (lecture seule, 03/10) — trois questions, trois réponses :
+  1. Les pods kindnet tournent (`Running`, 1/1, un par nœud) : le composant n'est pas en panne.
+  2. Leurs journaux, en boucle sur chaque nœud :
+     ```
+     controller.go:711] "Syncing nftables rules"
+     controller.go:925] "syncing nftables rules" error=<
+     controller.go:703] "Unhandled Error" err=<
+     controller.go:704] "Dropping out of the queue" error=<
+     ```
+     kindnet essaie d'écrire ses règles de filtrage, échoue, réessaie, abandonne.
+  3. Le noyau WSL2 (`/proc/config.gz`, partagé par Ubuntu et Docker Desktop, donc par les nœuds) :
+     ```
+     CONFIG_NETFILTER_NETLINK_QUEUE=y
+     CONFIG_NF_TABLES=y
+     # CONFIG_NFT_QUEUE is not set
+     ```
+- **Cause confirmée** : kindnet applique les NetworkPolicies avec des règles nftables qui
+  utilisent l'instruction `queue` (le noyau passe chaque nouvelle connexion au contrôleur, qui
+  décide). Cette instruction demande `NFT_QUEUE`, **absent du noyau WSL2**. Le noyau refuse les
+  règles, kindnet abandonne, et le trafic passe sans aucun filtre. Rien n'est remonté à l'API
+  Kubernetes : les objets NetworkPolicy restent « valides ».
+- **Même famille que l'incident cgroup v1 du jalon 2** : le code Terraform est juste, `plan` et
+  `apply` sont verts, et la cause est quatre couches plus bas (NetworkPolicy → kindnet → nftables
+  → noyau WSL2).
+- **Ce que ça montre déjà** : sans le test, le jalon aurait été déclaré terminé sur la foi d'un
+  `apply` réussi. Le code était juste ; la protection, inexistante.
+- **Leçon** : une politique de sécurité n'existe que si un composant l'applique, et ce composant
+  dépend de l'environnement. « Créé sans erreur » ne dit rien de « appliqué ». Seul un test
+  négatif (on essaie de passer, on doit être bloqué) le prouve.
+- **Options pesées** :
+  1. Remplacer kindnet par Calico. Noyau WSL2 vérifié compatible (`IP_SET`, `NETFILTER_XT_SET`,
+     `IP_NF_MATCH_RPFILTER`, `XT_MATCH_ADDRTYPE/COMMENT/CONNTRACK/MULTIPORT`, `XT_MARK`,
+     `IP_NF_TARGET_REJECT`, `NF_CONNTRACK`, `VXLAN` à `=y`, `NET_IPIP=m`). Seule ligne
+     `is not set` : `NETFILTER_XT_MATCH_MARK`, ancien alias qui ne fait qu'activer `XT_MARK`,
+     présent.
+  2. Recompiler le noyau WSL2 : écarté, ni reproductible ni « as code ».
+  3. Garder kindnet et prouver sur un cluster éphémère en CI.
+- **Décision de Tunsay : option 3** (ADR 0009). Construit :
+  - `make isolation-check` : rejoue `isolation-proof` et **échoue** si un seul verdict diffère de
+    `BLOQUÉ BLOQUÉ BLOQUÉ OUVERT OUVERT BLOQUÉ BLOQUÉ no no`. En local il échoue sur 1 à 3, et le
+    dit : la limite reste visible ;
+  - `TF_APPLY_FLAGS` dans le Makefile : la CI appelle **le même `make infra-up`** avec
+    `-auto-approve`. Un seul chemin de déploiement, local et CI ;
+  - `.github/workflows/e2e.yml` : runner `ubuntu-24.04` figé (le résultat dépend du noyau, et
+    `ubuntu-latest` bascule vers Ubuntu 26 le 19/10), affichage de `NFT_QUEUE` du noyau, puis
+    `infra-up`, `isolation-check`, `app-proof`, et diagnostic kindnet en cas d'échec. Aucun
+    secret, `contents: read`. Lancé sur changement d'`infra/`, `k8s/`, Makefile ou sondes, à la
+    demande, et chaque lundi.
+  - Vérifié avant d'écrire : le runner `ubuntu-24.04` fournit Docker 28, Helm 3.22, kubectl
+    1.37 (écart de deux versions mineures avec le cluster 1.35, noté), noyau 6.17.
+- **Validation locale avant commit** (03/10) :
+  ```
+  attendu : BLOQUÉ BLOQUÉ BLOQUÉ OUVERT OUVERT BLOQUÉ BLOQUÉ no no
+  obtenu  : OUVERT OUVERT OUVERT OUVERT OUVERT BLOQUÉ BLOQUÉ no no
+  ISOLATION NON CONFORME (sur WSL2, tests 1 à 3 : voir journal jalon 3, incident I8)
+  ```
+  Échec attendu, et c'est la vérification du vérificateur : un `isolation-check` qui passerait en
+  local serait un test faux. `make infra-lint` vert. `make semgrep` silencieux sur le nouveau
+  script de sondes : aucune dérogation ajoutée par avance (une `nosemgrep` préventive avait été
+  écrite puis retirée avant le premier scan — on ne déroge qu'à une alerte constatée).
+
+### Risques surveillés à l'application
+
+- **Sondes du kubelet** (readiness/liveness) : elles viennent du nœud, pas d'un pod. Si kindnet
+  les filtre, les pods passent « non prêts » et l'application tombe. Témoin : tests 4 et 5,
+  `kubectl get pods`.
+- **DNS** : la règle vise les pods CoreDNS, alors que les pods interrogent l'IP du Service DNS.
+  Fonctionne si la politique est évaluée après la traduction d'adresse. Témoin : tests 4 et 5.
+- **Traefik en mode namespacé** : s'il ignore l'Ingress (annotation absente ou mal lue), le site
+  répond 404. Témoin : test 5.

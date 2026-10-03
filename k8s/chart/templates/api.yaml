@@ -35,6 +35,10 @@ spec:
       # Pas de variables d'environnement *_SERVICE_HOST pour chaque Service du namespace :
       # l'app n'en a pas besoin, et c'est une cartographie offerte à qui lit l'environnement.
       enableServiceLinks: false
+      serviceAccountName: api
+      # Redondant avec le compte de service, volontairement : le pod refuse le jeton même si le
+      # compte venait à être modifié.
+      automountServiceAccountToken: false
       securityContext:
         {{- include "ssf.podSecurityContext" .Values.api.uid | nindent 8 }}
       containers:

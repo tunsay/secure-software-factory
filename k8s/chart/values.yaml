@@ -11,7 +11,8 @@ image:
   pullPolicy: IfNotPresent
 
 ingress:
-  # Classe explicite : Traefik n'est pas la classe par défaut du cluster.
+  # Classe explicite, portée par l'annotation kubernetes.io/ingress.class (ADR 0008) :
+  # Traefik ne sert que les Ingress qui la nomment.
   className: traefik
 
 api:

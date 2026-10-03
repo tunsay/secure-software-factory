@@ -1,4 +1,6 @@
 # Installation : pip install pre-commit && pre-commit install --hook-type pre-commit --hook-type commit-msg
+# Sans default_stages, chaque hook tournait deux fois par commit (pre-commit, puis commit-msg).
+default_stages: [pre-commit]
 repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2

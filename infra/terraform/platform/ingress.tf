@@ -1,4 +1,4 @@
-# Ingress controller : Traefik (ADR 0007).
+# Ingress controller : Traefik (ADR 0007, droits restreints : ADR 0008).
 #
 # Pas ingress-nginx : le projet Kubernetes l'a retiré en mars 2026 (dépôt archivé, plus aucun
 # correctif de sécurité). Traefik est maintenu, et son chart est conforme à PSS restricted sans
@@ -28,18 +28,26 @@ resource "helm_release" "traefik" {
   timeout   = 300
 
   values = [yamlencode({
+    # Droits par namespace (jalon 3b, ADR 0008). Par défaut le chart crée une ClusterRole qui
+    # donne à Traefik la lecture de TOUS les Secrets du cluster, état Terraform compris.
+    # Ici : un Role dans son propre namespace et dans ssf, rien ailleurs.
+    rbac = { namespaced = true }
+
     providers = {
-      kubernetesCRD     = { enabled = false }
-      kubernetesIngress = { enabled = true }
+      kubernetesCRD = { enabled = false }
+      kubernetesIngress = {
+        enabled    = true
+        namespaces = [module.ns_app.name]
+        # En mode namespacé, Traefik ne lit plus les IngressClass (objets de niveau cluster) et
+        # ignore les Ingress qui en référencent une (spec.ingressClassName). Il sert ceux qui
+        # portent l'annotation kubernetes.io/ingress.class de cette valeur, et aucun autre :
+        # la classe reste explicite.
+        ingressClass = local.ingress_class
+      }
     }
 
-    # Classe explicite, pas de classe par défaut : un Ingress qui ne la nomme pas n'est servi
-    # par personne, plutôt que d'être exposé par surprise.
-    ingressClass = {
-      enabled        = true
-      isDefaultClass = false
-      name           = local.ingress_class
-    }
+    # Pas d'objet IngressClass : inutilisable en RBAC namespacé (voir ci-dessus).
+    ingressClass = { enabled = false }
 
     service = { spec = { type = "NodePort" } }
     ports = {

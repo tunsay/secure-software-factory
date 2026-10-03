@@ -1,7 +1,7 @@
 # Chapitre 3 — Jalon 3 : l'application dans le cluster, puis le cloisonnement
 
-*28 septembre 2026 — 3a : l'app servie par le cluster, sept incidents, une faille de la CI
-trouvée en chemin · 3b : à venir*
+*28 septembre – 3 octobre 2026 — 3a : l'app servie par le cluster, sept incidents, une faille de
+la CI trouvée en chemin · 3b : le cloisonnement, mesuré avant et après*
 
 ## Objectif du jalon
 
@@ -237,15 +237,122 @@ personne ne regarde ne contrôle plus rien.*
 
 ## 3b — Le cluster est cloisonné
 
-*À venir.* Même méthode : l'avant est mesuré **avant** tout durcissement.
+Même méthode qu'au jalon 2 : **une seule commande**, `make isolation-proof`, lancée avant puis
+après le durcissement. Elle se place du point de vue d'un attaquant qui a pris la main sur le
+pod api (par une dépendance vulnérable, par exemple) et pose huit questions : où peut-il aller,
+et que peut-il faire avec l'identité du pod ? Les sondes sont en lecture seule.
 
-| Test | Avant attendu | Après attendu |
+### Avant — l'état par défaut de Kubernetes (mesuré le 3 octobre)
+
+```
+############ RÉSEAU ############
+== 1. api -> web : mouvement latéral
+OUVERT   HTTP 200 depuis http://web:8080/healthz
+== 2. api -> Internet : exfiltration, téléchargement d'outil
+OUVERT   HTTP 200 depuis https://example.com
+== 3. pod d'un autre namespace (default) -> api
+OUVERT   réponse de api.ssf depuis default
+== 4. web -> api : flux légitime
+OUVERT   réponse de api depuis web
+== 5. navigateur -> Traefik -> web -> api : chemin complet
+OUVERT   127.0.0.1:8081/api/health
+
+############ IDENTITÉ ############
+== 6. jeton Kubernetes monté dans le pod api
+OUVERT   jeton monté dans /var/run/secrets/kubernetes.io/serviceaccount/
+== 7. depuis le pod api, ce jeton s'authentifie auprès de l'API Kubernetes
+OUVERT   authentifié auprès de l'API Kubernetes comme system:serviceaccount:ssf:default
+== 8. Traefik peut lire les Secrets hors de ce qu'il sert
+   Secrets du namespace terraform-state (état Terraform) : yes
+   Secrets de tout le cluster                            : yes
+```
+
+Huit questions, huit réponses ouvertes. Aucune n'est une erreur de configuration du projet :
+c'est le comportement **par défaut** de Kubernetes et du chart Traefik.
+
+- **Réseau plat** (1, 3) : tout pod du cluster joint tout autre pod. Le test réseau du jalon 1
+  (sous compose, l'api joignait le front) se retrouve à l'identique dans Kubernetes.
+- **Sortie libre** (2) : un attaquant télécharge ses outils et exfiltre ce qu'il trouve.
+- **Jeton monté et accepté** (6, 7) : Kubernetes donne à chaque pod un badge d'accès à son API.
+  Le compte `default` n'a aucun droit à ce stade — authentifié n'est pas autorisé — mais la porte
+  du composant le plus critique du cluster est ouverte : il suffit d'une erreur de RBAC future
+  pour que ce badge devienne une clé.
+- **Traefik lit tous les Secrets** (8) : le seul composant exposé à l'extérieur peut lire
+  l'ensemble des secrets du cluster, état Terraform compris.
+- **Témoins** (4, 5) : les flux légitimes. Ils doivent rester ouverts après : un durcissement qui
+  casse l'application n'est pas un durcissement, c'est une panne.
+
+### Ce qui a été construit ([ADR 0008](../adr/0008-cloisonnement-reseau-et-droits.md))
+
+| Mesure | Où | Contre quels tests |
 |---|---|---|
-| L'API joint le front (`http://web:8080`) | réussit : réseau plat, comme sous compose au jalon 1 | refusé : NetworkPolicy deny-by-default |
-| Le front joint l'API | réussit | réussit : seul flux ouvert |
-| Token Kubernetes présent dans le pod | oui, monté par défaut | absent |
-| Ce token interroge l'API Kubernetes | à mesurer | impossible, faute de token |
-| Droits de Traefik | lecture sur tout le cluster | limités aux namespaces servis |
+| 5 NetworkPolicies : tout fermé dans `ssf`, puis Traefik → web, web → api, DNS | Terraform, `platform/network.tf` | 1, 2, 3 |
+| Compte `default` sans jeton, dans chaque namespace | Terraform, module `namespace` | 6, 7 |
+| Comptes `api` et `web` dédiés, sans jeton, refus répété sur le pod | chart | 6, 7 |
+| Traefik en RBAC namespacé : un Role dans `ingress` et `ssf`, plus de ClusterRole | Terraform, `ingress.tf` | 8 |
+
+Les politiques réseau sont dans la plateforme, pas dans le chart : celui qui déploie
+l'application (ArgoCD au jalon 5) ne doit pas pouvoir élargir ses propres flux.
+
+Un compromis assumé : en mode namespacé, Traefik ignore les Ingress qui utilisent
+`spec.ingressClassName`. L'Ingress porte donc l'annotation `kubernetes.io/ingress.class`, que
+Kubernetes signale comme dépréciée. Une annotation dépréciée contre la lecture de tous les
+Secrets du cluster par le composant le plus exposé : la sécurité l'emporte.
+
+### Après — premier passage, sur le poste (même commande)
+
+```
+== 1. api -> web          OUVERT   HTTP 200 depuis http://web:8080/healthz
+== 2. api -> Internet     OUVERT   HTTP 200 depuis https://example.com
+== 3. default -> api      OUVERT   réponse de api.ssf depuis default
+== 4. web -> api          OUVERT   réponse de api depuis web
+== 5. chemin complet      OUVERT   127.0.0.1:8081/api/health
+== 6. jeton monté         BLOQUÉ   FileNotFoundError: aucun jeton dans /var/run/secrets/kubernetes.io/serviceaccount/
+== 7. jeton accepté       BLOQUÉ   FileNotFoundError: [Errno 2] No such file or directory: '.../token'
+== 8. Traefik, Secrets    terraform-state : no   ·   tout le cluster : no
+```
+(sortie condensée, une ligne par test)
+
+| | Avant | Après | |
+|---|---|---|---|
+| 6. Jeton monté dans le pod | oui | **non** | ✅ |
+| 7. Jeton accepté par l'API Kubernetes | oui | **impossible** | ✅ |
+| 8. Traefik lit les Secrets hors de son périmètre | oui | **non** | ✅ |
+| 4, 5. Flux légitimes | ouverts | ouverts | ✅ |
+| 1, 2, 3. Flux interdits | ouverts | **ouverts** | ❌ |
+
+**L'identité est cloisonnée. Le réseau ne l'est pas**, alors que les cinq NetworkPolicies ont été
+créées sans la moindre erreur.
+
+### La protection qui n'existait que sur le papier
+
+C'est l'enseignement principal du jalon, et il n'aurait jamais été vu sans le test.
+
+Diagnostic, en lecture seule : les pods kindnet (le composant réseau de kind) tournent, mais leurs
+journaux bouclent sur la même erreur — `"syncing nftables rules" error`, puis `"Dropping out of
+the queue"`. Et le noyau WSL2 :
+
+```
+CONFIG_NETFILTER_NETLINK_QUEUE=y
+CONFIG_NF_TABLES=y
+# CONFIG_NFT_QUEUE is not set
+```
+
+kindnet applique les NetworkPolicies avec des règles nftables qui utilisent l'instruction `queue`.
+Le noyau WSL2 de Microsoft ne la fournit pas. Les règles sont refusées, kindnet abandonne, et le
+trafic passe sans filtre. Rien ne remonte à Kubernetes : les objets NetworkPolicy restent
+« valides ». Quatre couches séparent le symptôme de la cause (NetworkPolicy → kindnet → nftables
+→ noyau), comme pour l'incident cgroup v1 du jalon 2.
+
+**Décision ([ADR 0009](../adr/0009-preuve-reseau-en-ci-ephemere.md))** : kindnet est conservé, et
+le cloisonnement réseau est prouvé sur un **cluster éphémère en CI**, dont le noyau Ubuntu fournit
+`NFT_QUEUE`. Le workflow `e2e` construit le cluster avec le même `make infra-up` qu'en local, puis
+`make isolation-check` exige les huit verdicts attendus et échoue sur le moindre écart. Calico
+(noyau WSL2 vérifié compatible) reste la voie si le poste doit un jour filtrer le réseau.
+
+### Après — sur le cluster éphémère de la CI
+
+*À venir : résultat du premier run du workflow `e2e`.*
 
 ---
 

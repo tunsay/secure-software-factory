@@ -23,7 +23,7 @@ CHART     := k8s/chart
 CHART_TAG := $(shell sed -n 's/^image_tag *= *"\(.*\)"/\1/p' $(TF_PLATFORM)/dev.tfvars)
 
 .PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools \
-        infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof
+        infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof isolation-proof isolation-check
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -91,12 +91,16 @@ install-tools: ## Installe l'outillage sous WSL (terraform, kubectl, kind, helm,
 # Infrastructure : Terraform → kind (couche cluster) puis config (couche platform)
 # ---------------------------------------------------------------------------
 
+# Vide en local : chaque apply affiche son plan et attend « yes ». La CI e2e passe -auto-approve,
+# sur un cluster éphémère : même cible, même code, seule la confirmation change.
+TF_APPLY_FLAGS ?=
+
 infra-up: ## Crée le cluster kind puis applique la couche platform (demande confirmation)
-	cd $(TF_CLUSTER) && terraform init -input=false && terraform apply -input=false
+	cd $(TF_CLUSTER) && terraform init -input=false && terraform apply -input=false $(TF_APPLY_FLAGS)
 	@# Le namespace de l'état distant est le seul objet créé hors Terraform : il doit exister avant l'init.
 	$(KUBECTL) create namespace terraform-state --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	cd $(TF_PLATFORM) && terraform init -input=false -backend-config="config_path=$(KUBECONFIG_SSF)" \
-	  && terraform apply -input=false -var-file=dev.tfvars
+	  && terraform apply -input=false -var-file=dev.tfvars $(TF_APPLY_FLAGS)
 
 infra-plan: ## Plan de la couche platform, sans appliquer
 	cd $(TF_PLATFORM) && terraform plan -input=false -var-file=dev.tfvars
@@ -123,6 +127,45 @@ app-proof: ## Preuve 3a : l'app répond via l'ingress, depuis des pods durcis
 	-$(KUBECTL) -n ssf exec deploy/web -- sh -c 'echo defaced > /usr/share/nginx/html/index.html'
 	@echo; echo "== Ports publiés par le cluster (127.0.0.1 : rien d'exposé au réseau local) :"
 	docker port ssf-dev-control-plane
+
+# Sondes exécutées dans le pod api : le script est envoyé sur l'entrée standard, rien n'est
+# copié dans le conteneur (système de fichiers en lecture seule de toute façon).
+PROBE = $(KUBECTL) -n ssf exec -i deploy/api -- python -
+
+isolation-proof: ## Preuve 3b : flux réseau et identités — même commande avant et après durcissement
+	@echo "############ RÉSEAU ############"
+	@echo; echo "== 1. api -> web : mouvement latéral (après durcissement : BLOQUÉ)"
+	@$(PROBE) http http://web:8080/healthz < scripts/k8s-probe.py
+	@echo; echo "== 2. api -> Internet : exfiltration, téléchargement d'outil (après : BLOQUÉ)"
+	@$(PROBE) http https://example.com < scripts/k8s-probe.py
+	@echo; echo "== 3. pod d'un autre namespace (default) -> api (après : BLOQUÉ)"
+	@$(KUBECTL) -n default run isolation-probe --rm -i --quiet --restart=Never --image=busybox:1.37 --command -- \
+	  sh -c 'wget -q -O /dev/null -T 4 http://api.ssf:8000/health && echo "OUVERT   réponse de api.ssf depuis default" || echo "BLOQUÉ   aucune réponse de api.ssf"'
+	@echo; echo "== 4. web -> api : flux légitime (après : toujours OUVERT)"
+	@$(KUBECTL) -n ssf exec deploy/web -- \
+	  sh -c 'wget -q -O /dev/null -T 4 http://api:8000/health && echo "OUVERT   réponse de api depuis web" || echo "BLOQUÉ   aucune réponse de api"'
+	@echo; echo "== 5. navigateur -> Traefik -> web -> api : chemin complet (après : toujours OUVERT)"
+	@curl -fsS -m 5 -o /dev/null http://127.0.0.1:8081/api/health && echo "OUVERT   127.0.0.1:8081/api/health" || echo "BLOQUÉ   127.0.0.1:8081/api/health"
+	@echo; echo "############ IDENTITÉ ############"
+	@echo; echo "== 6. jeton Kubernetes monté dans le pod api (après : BLOQUÉ, aucun jeton)"
+	@$(PROBE) token < scripts/k8s-probe.py
+	@echo; echo "== 7. depuis le pod api, ce jeton s'authentifie auprès de l'API Kubernetes (après : BLOQUÉ)"
+	@$(PROBE) whoami < scripts/k8s-probe.py
+	@echo; echo "== 8. Traefik peut lire les Secrets hors de ce qu'il sert (après : no)"
+	@printf '   Secrets du namespace terraform-state (état Terraform) : '; \
+	  $(KUBECTL) auth can-i list secrets -n terraform-state --as=system:serviceaccount:ingress:traefik || true
+	@printf '   Secrets de tout le cluster                            : '; \
+	  $(KUBECTL) auth can-i list secrets --all-namespaces --as=system:serviceaccount:ingress:traefik || true
+
+# Verdicts attendus après durcissement, dans l'ordre des tests de isolation-proof.
+ISOLATION_EXPECTED := BLOQUÉ BLOQUÉ BLOQUÉ OUVERT OUVERT BLOQUÉ BLOQUÉ no no
+
+isolation-check: ## isolation-proof + verdict : échoue si un seul résultat diffère de l'après attendu (CI e2e)
+	@out="$$($(MAKE) --no-print-directory isolation-proof)"; echo "$$out"; \
+	  got="$$(echo "$$out" | grep -oE '^(OUVERT|BLOQUÉ)|: (yes|no)$$' | sed 's/^: //' | tr '\n' ' ' | sed 's/ $$//')"; \
+	  echo; echo "attendu : $(ISOLATION_EXPECTED)"; echo "obtenu  : $$got"; \
+	  if [ "$$got" = "$(ISOLATION_EXPECTED)" ]; then echo "ISOLATION CONFORME"; \
+	  else echo "ISOLATION NON CONFORME (sur WSL2, tests 1 à 3 : voir journal jalon 3, incident I8)"; exit 1; fi
 
 infra-lint: chart-lint ## fmt, validate, checkov, trivy config — ce que la CI exécute sur le code Terraform
 	terraform fmt -check -recursive -diff infra/terraform

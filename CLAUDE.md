@@ -29,6 +29,9 @@ GitHub Actions + GitLab CI en miroir, GHCR.
 
 Les paquets GHCR `ssf-api` et `ssf-web` sont publics (vérifié le 28/09 : tirage anonyme OK).
 Ingress : Traefik par NodePort, pas ingress-nginx (retiré en mars 2026) — ADR 0007.
+3b (03/10) : NetworkPolicies + comptes sans jeton + Traefik namespacé (ADR 0008). **Le noyau
+WSL2 n'a pas NFT_QUEUE : kindnet n'applique pas les NetworkPolicies en local** (incident I8) ;
+preuve réseau sur cluster éphémère en CI, workflow `e2e` (ADR 0009).
 Journal des incidents du jalon en cours : `docs/rapport/journal-jalon-3.md`.
 
 Le plan directeur complet des 6 jalons est dans `docs/rapport/plan.md`. Jalons 4-6 : SBOM +
@@ -48,6 +51,8 @@ make infra-proof   # preuve : pod root refusé par PSS dans le namespace ssf
 make attack-escape # démo avant/après : évasion hostPath réussie dans default, bloquée dans ssf
 make chart-lint    # helm lint + rendu + trivy du chart k8s/chart (inclus dans infra-lint)
 make app-proof     # preuve 3a : app servie par Traefik sur 127.0.0.1:8081, pods non-root, lecture seule
+make isolation-proof # preuve 3b : 8 tests réseau + identité, OUVERT/BLOQUÉ (même commande avant/après)
+make isolation-check # idem + verdict strict ; échoue en local sur les tests réseau (WSL2, incident I8)
 ```
 
 Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make infra-up`.

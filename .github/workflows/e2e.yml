@@ -1,0 +1,61 @@
+# Preuve de bout en bout sur un cluster éphémère (jalon 3b, ADR 0009).
+#
+# Pourquoi en CI : sur le poste de développement (WSL2), le noyau n'a pas NFT_QUEUE ; kindnet ne
+# peut pas y appliquer les NetworkPolicies, qui sont acceptées puis ignorées en silence (journal
+# du jalon 3, incident I8). Le noyau Ubuntu du runner l'a : on y construit le cluster avec les
+# mêmes cibles make qu'en local, et on exige l'« après » complet.
+name: e2e
+
+on:
+  push:
+    branches: [main]
+    paths: ["infra/**", "k8s/**", "scripts/k8s-probe.py", "Makefile", ".github/workflows/e2e.yml"]
+  pull_request:
+    paths: ["infra/**", "k8s/**", "scripts/k8s-probe.py", "Makefile", ".github/workflows/e2e.yml"]
+  workflow_dispatch:
+  # Chaque lundi, sans commit : détecte une dérive extérieure (image tirée, chart, provider).
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read # aucun secret, aucun droit d'écriture : les images GHCR sont publiques
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolation:
+    name: cluster éphémère · isolation-check + app-proof
+    # Version figée, pas ubuntu-latest : le résultat dépend du noyau du runner.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: noyau du runner — NFT_QUEUE est requis pour que kindnet applique les NetworkPolicies
+        run: |
+          uname -r
+          grep -E 'CONFIG_NFT_QUEUE|CONFIG_NETFILTER_NETLINK_QUEUE' "/boot/config-$(uname -r)"
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with: { terraform_version: "1.16.2", terraform_wrapper: false }
+
+      # Cluster créé de zéro : le plan affiche « (known after apply) » pour la clé privée du
+      # cluster, jamais sa valeur (elle n'apparaît qu'au plan d'un remplacement, incident I2).
+      - name: make infra-up (cluster + platform, sans confirmation interactive)
+        run: make infra-up TF_APPLY_FLAGS=-auto-approve
+
+      - name: make isolation-check — échoue si un seul test diffère de l'après attendu
+        run: make isolation-check
+
+      - name: make app-proof — non-régression du jalon 3a
+        run: make app-proof
+
+      - name: diagnostic (en cas d'échec uniquement)
+        if: failure()
+        run: |
+          KC="kubectl --kubeconfig $HOME/.kube/ssf-dev --context kind-ssf-dev"
+          $KC get pods -A -o wide || true
+          $KC -n ssf get networkpolicy || true
+          $KC -n kube-system logs -l app=kindnet --tail=100 --prefix || true

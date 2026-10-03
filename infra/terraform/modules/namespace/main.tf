@@ -22,6 +22,18 @@ resource "kubernetes_namespace_v1" "this" {
   }
 }
 
+# Compte de service « default » : plus de jeton monté automatiquement (jalon 3b).
+# Par défaut, Kubernetes donne à tout pod sans compte explicite un jeton d'accès à son API.
+# Un pod qui en a réellement besoin (Traefik, un contrôleur) déclare son propre compte et
+# demande le montage explicitement : le jeton devient une exception choisie, plus un défaut.
+resource "kubernetes_default_service_account_v1" "this" {
+  metadata {
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
+  }
+
+  automount_service_account_token = false
+}
+
 # Quota : plafond global du namespace.
 resource "kubernetes_resource_quota_v1" "this" {
   metadata {

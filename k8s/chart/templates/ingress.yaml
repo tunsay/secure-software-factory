@@ -6,8 +6,13 @@ metadata:
   name: web
   labels:
     {{- include "ssf.labels" (list . "web") | nindent 4 }}
+  annotations:
+    # Annotation plutôt que spec.ingressClassName (ADR 0008) : avec des droits limités à ses
+    # namespaces, Traefik ne lit plus les IngressClass et ignore les Ingress qui en référencent
+    # une. L'API server signale l'annotation comme dépréciée ; c'est le prix, assumé, de ne pas
+    # donner à Traefik la lecture de tous les Secrets du cluster.
+    kubernetes.io/ingress.class: {{ .Values.ingress.className | quote }}
 spec:
-  ingressClassName: {{ .Values.ingress.className }}
   rules:
     - http:
         paths:
