@@ -1,6 +1,7 @@
 # Dérogations aux gates de sécurité.
 # Chaque entrée : identifiant, outil, justification, propriétaire, date d'expiration.
-# Une dérogation expirée fait échouer la CI (contrôle ajouté en S4).
+# Une dérogation expirée, ou sans date, fait échouer la CI : scripts/check-exceptions.py, job
+# gitleaks de ci.yml, et `make scan` (jalon 4b).
 # Chaque dérogation est aussi marquée à l'endroit exact du code (commentaire nosemgrep, etc.) :
 # on ne désactive jamais une règle pour tout un fichier ou tout un dossier.
 exceptions:
@@ -19,6 +20,16 @@ exceptions:
     reason: >-
       Extrait de /etc/shadow d'un nœud kind jetable, cité comme preuve de l'évasion hostPath.
       Comptes verrouillés (*), aucun condensat de mot de passe.
+    owner: tunsay
+    expires: 2027-03-31
+
+  - id: generic-api-key
+    tool: gitleaks
+    path: .gitleaks.toml
+    reason: >-
+      Les images ssf-api et ssf-web sont taguées par le SHA complet du commit : « api » suivi de
+      40 caractères hexadécimaux a la forme d'une clé d'API. Exception limitée aux lignes portant
+      le tag d'une de nos images (journal jalon 4, J4-I1).
     owner: tunsay
     expires: 2027-03-31
 

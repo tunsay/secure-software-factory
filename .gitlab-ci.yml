@@ -13,14 +13,17 @@ gitleaks:
 
 api:
   stage: sast
-  image: python:3.12-slim
+  # Même image que la production (app/api/Dockerfile), épinglée par digest. Jusqu'au jalon 4b, ce
+  # miroir tournait en Python 3.12 quand GitHub et l'image étaient en 3.14.
+  image: python:3.14-slim@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4
   cache: { key: pip, paths: [.cache/pip] }
   script:
+    - python scripts/check-exceptions.py # dérogations : aucune expirée (l'image gitleaks n'a pas Python)
     - cd app/api
-    - pip install -r requirements-dev.txt
+    - pip install --require-hashes -r requirements.txt && pip install -r requirements-dev.txt
     - ruff check . && ruff format --check .
     - bandit -q -r app -c pyproject.toml
-    - pip-audit -r requirements.txt --strict
+    - pip-audit -r requirements.txt --require-hashes --disable-pip --strict
     - python -m pytest -q
 
 web:

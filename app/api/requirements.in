@@ -1,0 +1,11 @@
+# Dépendances directes de l'API — la seule liste à modifier à la main.
+# requirements.txt en est dérivé, avec toutes les dépendances indirectes et leurs empreintes :
+#   docker run --rm -v "$PWD/app/api:/w" -w /w python:3.14-slim@sha256:<digest du Dockerfile> \
+#     sh -c 'pip install -q pip-tools==7.6.1 && pip-compile -q --generate-hashes --strip-extras \
+#            --output-file=requirements.txt requirements.in'
+# Résolu dans la même image que la production (Python 3.14) : les dépendances conditionnelles
+# (selon la version de Python) sont celles de l'image, pas celles du poste.
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+pydantic==2.13.5
+prometheus-fastapi-instrumentator==8.1.0

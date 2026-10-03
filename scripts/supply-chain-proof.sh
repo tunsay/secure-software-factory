@@ -90,6 +90,34 @@ else
 fi
 
 echo
+echo "############ QUI PEUT SIGNER EN NOTRE NOM ? ############"
+echo
+echo "== jobs de ci.yml autorisés à obtenir un jeton OIDC (id-token: write)"
+python3 - .github/workflows/ci.yml <<'PY'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+# Droits du workflow entier : bloc « permissions: » de premier niveau.
+top = re.search(r"^permissions:(.*?)(?=^\S)", text, re.S | re.M)
+top_block = top.group(1) if top else ""
+if "id-token" in top_block:
+    print("NON      accordé à tout le workflow : chaque job, y compris ceux qui installent des paquets tiers")
+    sys.exit()
+# Droits job par job : on rattache chaque clé YAML « id-token: write » au job qui la contient.
+# Clé en début de ligne seulement : la même chaîne dans un commentaire ne compte pas.
+jobs, current = [], None
+for line in text.split("jobs:", 1)[1].splitlines():
+    m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+    if m:
+        current = m.group(1)
+    elif re.match(r"^\s+id-token:\s*write\b", line) and current and current not in jobs:
+        jobs.append(current)
+if jobs == ["images"]:
+    print("OUI      seul le job images (publication), qui n'installe aucun paquet sur le runner")
+else:
+    print("NON      jobs concernés : " + (", ".join(jobs) or "aucun"))
+PY
+
+echo
 echo "############ CE QUI ENTRE DANS LE BUILD ############"
 echo
 echo "== images de base épinglées par digest"

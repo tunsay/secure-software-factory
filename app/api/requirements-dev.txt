@@ -1,4 +1,7 @@
--r requirements.txt
+# Outils de développement et de contrôle, installés à part des dépendances de l'application.
+# Ce fichier n'inclut plus requirements.txt (jalon 4b) : pip active la vérification des
+# empreintes pour TOUTE une installation dès qu'un fichier en contient, et ces outils n'en ont
+# pas. Installation : pip install --require-hashes -r requirements.txt, puis ce fichier.
 pytest==9.1.1
 httpx==0.28.1
 ruff==0.16.7

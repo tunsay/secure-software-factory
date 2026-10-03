@@ -1,5 +1,9 @@
+# Images de base épinglées par digest (jalon 4b) : le tag seul désigne une image différente à
+# chaque reconstruction de l'éditeur. Le tag reste pour la lecture, le digest fait foi ;
+# Dependabot propose les mises à jour (délai de carence de 7 jours).
+
 # --- étape 1 : build des dépendances dans un venv isolé -----------------------
-FROM python:3.14-slim AS builder
+FROM python:3.14-slim@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4 AS builder
 
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -9,12 +13,14 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
-# S4 : passer à --require-hashes (pip-compile --generate-hashes) pour figer la supply chain.
-RUN pip install -r requirements.txt \
+# --require-hashes : chaque paquet téléchargé est comparé à l'empreinte enregistrée dans
+# requirements.txt (généré par pip-compile --generate-hashes depuis requirements.in). Un paquet
+# remplacé sur l'index, ou servi par un miroir compromis, est refusé.
+RUN pip install --require-hashes -r requirements.txt \
  && pip uninstall -y pip setuptools wheel
 
 # --- étape 2 : image finale, sans pip, sans compilateur, sans root ------------
-FROM python:3.14-slim AS runtime
+FROM python:3.14-slim@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4 AS runtime
 
 ARG APP_VERSION=0.1.0
 ENV APP_VERSION=${APP_VERSION} \

@@ -16,6 +16,10 @@ export PATH := $(CURDIR)/$(VENV)/bin:$(PATH)
 TF_CLUSTER  := infra/terraform/cluster
 TF_PLATFORM := infra/terraform/platform
 KUBECONFIG_SSF := $(HOME)/.kube/ssf-dev
+# État de la couche cluster : contient la clé privée administrateur du cluster, donc hors du dépôt
+# (journal jalon 4, J4-I6), dans le dossier personnel WSL, lisible par le seul utilisateur.
+TF_CLUSTER_STATE_DIR := $(HOME)/.local/state/ssf
+TF_CLUSTER_STATE     := $(TF_CLUSTER_STATE_DIR)/cluster.tfstate
 KUBECTL := kubectl --kubeconfig $(KUBECONFIG_SSF) --context kind-ssf-dev
 
 # Chart de l'app, rendu avec la version réellement déployée (lue dans dev.tfvars).
@@ -33,10 +37,14 @@ help: ## Affiche cette aide
 
 setup: $(VENV)/.stamp app/web/node_modules/.stamp ## Installe les dépendances de dev (venv Python + npm)
 
-$(VENV)/.stamp: app/api/requirements-dev.txt
+# Poste : le python3 de WSL est en 3.10, l'image et la CI en 3.14. requirements.txt (empreintes)
+# est résolu pour 3.14 et ne s'installe pas en 3.10 (dépendances conditionnelles différentes) :
+# le venv local part de requirements.in, sans empreintes. Il sert aux tests et au lint ; la
+# chaîne qui mène à la production (image, CI) vérifie les empreintes (journal jalon 4, J4-I2).
+$(VENV)/.stamp: app/api/requirements.in app/api/requirements-dev.txt
 	python3 -m venv $(VENV)
 	$(PY) -m pip install -q --upgrade pip
-	$(PY) -m pip install -q -r app/api/requirements-dev.txt
+	$(PY) -m pip install -q -r app/api/requirements.in -r app/api/requirements-dev.txt
 	@touch $@
 
 app/web/node_modules/.stamp: app/web/package-lock.json
@@ -66,8 +74,9 @@ lint: setup ## Lint + SAST locaux (ruff, bandit, eslint)
 	cd app/web && npm run lint
 
 scan: lint semgrep scan-image ## Rejoue les contrôles CI en local
-	cd app/api && pip-audit -r requirements.txt --strict
+	cd app/api && pip-audit -r requirements.txt --require-hashes --disable-pip --strict
 	cd app/web && npm audit --audit-level=high
+	python3 scripts/check-exceptions.py
 	gitleaks dir . --no-banner --redact
 	@if [ -d .git ]; then gitleaks git . --no-banner --redact; else echo "gitleaks git : pas de dépôt, historique non scanné"; fi
 
@@ -99,7 +108,9 @@ install-tools: ## Installe l'outillage sous WSL (terraform, kubectl, kind, helm,
 TF_APPLY_FLAGS ?=
 
 infra-up: ## Crée le cluster kind puis applique la couche platform (demande confirmation)
-	cd $(TF_CLUSTER) && terraform init -input=false && terraform apply -input=false $(TF_APPLY_FLAGS)
+	mkdir -p -m 700 $(TF_CLUSTER_STATE_DIR)
+	cd $(TF_CLUSTER) && terraform init -input=false -backend-config="path=$(TF_CLUSTER_STATE)" \
+	  && terraform apply -input=false $(TF_APPLY_FLAGS)
 	@# Le namespace de l'état distant est le seul objet créé hors Terraform : il doit exister avant l'init.
 	$(KUBECTL) create namespace terraform-state --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	cd $(TF_PLATFORM) && terraform init -input=false -backend-config="config_path=$(KUBECONFIG_SSF)" \

@@ -12,11 +12,13 @@ on:
     branches: [main]
   pull_request:
 
+# Moindre privilège (jalon 4b) : par défaut, un job ne peut que lire le dépôt. Les droits
+# d'écriture sont accordés job par job. Jusqu'au jalon 4a, id-token et packages valaient pour tout
+# le workflow : un paquet compromis installé par le job api ou web (pip install, npm ci et ses
+# scripts d'installation) aurait pu obtenir un jeton OIDC à l'identité ci.yml@main — celle
+# qu'exige la vérification — et signer une image en notre nom (journal du jalon 4, J4-I3).
 permissions:
   contents: read
-  security-events: write # upload SARIF vers l'onglet Security
-  packages: write        # push des images vers ghcr.io (sur main uniquement)
-  id-token: write        # token OIDC — Cosign keyless (jalon 4)
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,6 +34,10 @@ jobs:
       - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Une dérogation de sécurité a une date d'expiration : passée cette date, la CI échoue
+      # (promis par security/exceptions.yaml depuis le jalon 1, en place au jalon 4b).
+      - name: dérogations de sécurité — aucune expirée
+        run: python3 scripts/check-exceptions.py
 
   api:
     name: api · lint / SAST / SCA / tests
@@ -40,14 +46,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.14", cache: pip, cache-dependency-path: app/api/requirements-dev.txt }
-      - run: pip install -r requirements-dev.txt
+        with: { python-version: "3.14", cache: pip, cache-dependency-path: "app/api/requirements*.txt" }
+      # Dépendances de l'application : chaque paquet vérifié par son empreinte (jalon 4b).
+      # Outils de développement installés à part : un fichier sans empreintes ne doit pas
+      # désactiver la vérification de l'autre.
+      - run: pip install --require-hashes -r requirements.txt && pip install -r requirements-dev.txt
       - name: ruff
         run: ruff check . && ruff format --check .
       - name: bandit (SAST)
         run: bandit -q -r app -c pyproject.toml
+      # Audit de la liste figée exacte (--require-hashes) sans faire appel à pip (--disable-pip) :
+      # aucun paquet téléchargé depuis PyPI (cause de l'incident J4-I2), aucune dépendance à la
+      # version de Python qui exécute l'audit (J4-I5). Les empreintes, elles, sont vérifiées à
+      # l'installation, dans la construction de l'image.
       - name: pip-audit (SCA)
-        run: pip-audit -r requirements.txt --strict
+        run: pip-audit -r requirements.txt --require-hashes --disable-pip --strict
       - name: pytest
         run: python -m pytest -q
 
@@ -69,6 +82,7 @@ jobs:
   semgrep:
     name: semgrep (SAST multi-langage)
     runs-on: ubuntu-24.04
+    permissions: { contents: read, security-events: write } # envoi du SARIF
     container: semgrep/semgrep
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -80,6 +94,7 @@ jobs:
   iac:
     name: terraform + chart · fmt / validate / checkov / helm lint / trivy config
     runs-on: ubuntu-24.04
+    permissions: { contents: read, security-events: write } # envoi du SARIF
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -136,6 +151,14 @@ jobs:
     # semgrep échouait (journal jalon 3, incident I7).
     needs: [secrets, api, web, semgrep, iac]
     runs-on: ubuntu-24.04
+    # Seul job autorisé à publier (packages) et à signer (id-token). Sur le runner, il n'exécute
+    # que des actions épinglées par SHA, jamais de `pip install` ni de `npm ci` : les dépendances
+    # de l'application s'installent dans la construction de l'image, qui n'a pas accès aux jetons.
+    permissions:
+      contents: read
+      security-events: write # envoi du SARIF de Trivy
+      packages: write        # push vers ghcr.io (sur main uniquement)
+      id-token: write        # jeton OIDC pour la signature Cosign sans clé
     strategy:
       matrix:
         svc: [api, web]
