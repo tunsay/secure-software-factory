@@ -28,6 +28,7 @@ resource "helm_release" "app" {
     image = {
       registry = var.image_registry
       tag      = var.image_tag
+      digests  = var.image_digests
     }
     ingress = { className = local.ingress_class }
     api     = { env = { APP_ENV = var.environment } }

@@ -8,6 +8,11 @@ image:
   registry: ghcr.io/tunsay
   # Obligatoire : SHA complet du commit. Le chart refuse une valeur vide ou "latest".
   tag: ""
+  # Obligatoires : digest de chaque image publiée et signée par la CI (résumé du job images).
+  # C'est le digest qui fait foi au tirage, pas le tag.
+  digests:
+    api: ""
+    web: ""
   pullPolicy: IfNotPresent
 
 ingress:

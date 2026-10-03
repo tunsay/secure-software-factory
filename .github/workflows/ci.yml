@@ -113,10 +113,14 @@ jobs:
         with: { version: v3.22.0 }
       - name: helm lint + rendu du chart
         run: |
-          TAG=$(sed -n 's/^image_tag *= *"\(.*\)"/\1/p' infra/terraform/platform/dev.tfvars)
-          helm lint k8s/chart --strict --set image.tag="$TAG"
+          V=infra/terraform/platform/dev.tfvars
+          TAG=$(sed -n 's/^image_tag *= *"\(.*\)"/\1/p' "$V")
+          API=$(sed -n 's/^ *api *= *"\(sha256:[0-9a-f]*\)".*/\1/p' "$V")
+          WEB=$(sed -n 's/^ *web *= *"\(sha256:[0-9a-f]*\)".*/\1/p' "$V")
+          SET="image.tag=$TAG,image.digests.api=$API,image.digests.web=$WEB"
+          helm lint k8s/chart --strict --set "$SET"
           mkdir -p rendered
-          helm template ssf k8s/chart --set image.tag="$TAG" > rendered/ssf.yaml
+          helm template ssf k8s/chart --set "$SET" > rendered/ssf.yaml
       - name: trivy config (manifests Kubernetes rendus)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

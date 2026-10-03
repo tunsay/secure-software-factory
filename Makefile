@@ -19,8 +19,11 @@ KUBECONFIG_SSF := $(HOME)/.kube/ssf-dev
 KUBECTL := kubectl --kubeconfig $(KUBECONFIG_SSF) --context kind-ssf-dev
 
 # Chart de l'app, rendu avec la version réellement déployée (lue dans dev.tfvars).
-CHART     := k8s/chart
-CHART_TAG := $(shell sed -n 's/^image_tag *= *"\(.*\)"/\1/p' $(TF_PLATFORM)/dev.tfvars)
+CHART      := k8s/chart
+CHART_TAG  := $(shell sed -n 's/^image_tag *= *"\(.*\)"/\1/p' $(TF_PLATFORM)/dev.tfvars)
+CHART_API  := $(shell sed -n 's/^ *api *= *"\(sha256:[0-9a-f]*\)".*/\1/p' $(TF_PLATFORM)/dev.tfvars)
+CHART_WEB  := $(shell sed -n 's/^ *web *= *"\(sha256:[0-9a-f]*\)".*/\1/p' $(TF_PLATFORM)/dev.tfvars)
+CHART_SET  := image.tag=$(CHART_TAG),image.digests.api=$(CHART_API),image.digests.web=$(CHART_WEB)
 
 .PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools \
         infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof isolation-proof isolation-check supply-chain-proof
@@ -110,9 +113,9 @@ infra-down: ## Détruit platform puis le cluster (demande confirmation)
 	cd $(TF_CLUSTER) && terraform destroy -input=false
 
 chart-lint: ## Lint et rendu du chart Helm, scan trivy des manifests rendus
-	helm lint $(CHART) --strict --set image.tag=$(CHART_TAG)
-	helm template ssf $(CHART) --set image.tag=$(CHART_TAG) > /dev/null
-	trivy config --exit-code 1 --severity HIGH,CRITICAL --helm-set image.tag=$(CHART_TAG) $(CHART)
+	helm lint $(CHART) --strict --set $(CHART_SET)
+	helm template ssf $(CHART) --set $(CHART_SET) > /dev/null
+	trivy config --exit-code 1 --severity HIGH,CRITICAL --helm-set $(CHART_SET) $(CHART)
 
 app-proof: ## Preuve 3a : l'app répond via l'ingress, depuis des pods durcis
 	$(KUBECTL) -n ssf get pods -o wide

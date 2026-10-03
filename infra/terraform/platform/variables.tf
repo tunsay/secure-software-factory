@@ -35,6 +35,23 @@ variable "image_tag" {
   }
 }
 
+variable "image_digests" {
+  description = <<-EOT
+    Digest de chaque image, publiée et signée par la CI pour ce commit (résumé du job « images »).
+    C'est lui qui fait foi au tirage : un tag peut être déplacé dans le registre, un digest
+    désigne un contenu unique (jalon 4, ADR 0010).
+  EOT
+  type = object({
+    api = string
+    web = string
+  })
+
+  validation {
+    condition     = alltrue([for d in values(var.image_digests) : can(regex("^sha256:[0-9a-f]{64}$", d))])
+    error_message = "Digest sha256 complet attendu pour chaque image (sha256: suivi de 64 caractères hexadécimaux)."
+  }
+}
+
 variable "ingress_http_node_port" {
   description = "NodePort HTTP de Traefik. Doit être identique à la variable du même nom dans la couche cluster."
   type        = number

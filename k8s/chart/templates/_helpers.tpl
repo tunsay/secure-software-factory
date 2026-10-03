@@ -1,5 +1,7 @@
 {{/*
-Image d'un composant : <registre>/ssf-<composant>:<SHA>. Refuse un tag vide ou mobile.
+Image d'un composant : <registre>/ssf-<composant>:<SHA>@<digest> (jalon 4).
+Le digest fait foi : le contenu désigné ne peut pas changer. Le tag (SHA du commit) reste pour la
+lecture humaine ; il est ignoré au tirage. Refuse un tag vide ou mobile, et une image sans digest.
 Usage : {{ include "ssf.image" (list . "api") }}
 */}}
 {{- define "ssf.image" -}}
@@ -9,7 +11,11 @@ Usage : {{ include "ssf.image" (list . "api") }}
 {{- if not (regexMatch "^[0-9a-f]{40}$" $tag) -}}
 {{- fail (printf "image.tag doit être un SHA de commit complet, reçu %q" $tag) -}}
 {{- end -}}
-{{- printf "%s/ssf-%s:%s" $root.Values.image.registry $component $tag -}}
+{{- $digest := index $root.Values.image.digests $component | default "" -}}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" $digest) -}}
+{{- fail (printf "image.digests.%s doit être un digest sha256 (image signée publiée par la CI), reçu %q" $component $digest) -}}
+{{- end -}}
+{{- printf "%s/ssf-%s:%s@%s" $root.Values.image.registry $component $tag $digest -}}
 {{- end -}}
 
 {{/*
