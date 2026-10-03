@@ -26,7 +26,13 @@ GitHub Actions + GitLab CI en miroir, GHCR.
   (NodePort, 127.0.0.1). 3b : NetworkPolicies, comptes sans jeton, Traefik namespacé, preuve
   sur cluster éphémère en CI (workflow `e2e`). Dix incidents. Voir `docs/rapport/03-jalon-3.md`.
   Sealed Secrets + kube-bench reportés au jalon 5.
-- **Jalon 4 — prochain.** SBOM, signature Cosign keyless, digests (voir le plan).
+- **Jalon 4 — terminé (03/10).** Images publiées telles que scannées, SBOM attesté, signature
+  Cosign sans clé par le seul job `images` (identité exacte `ci.yml@refs/heads/main`), déploiement
+  par `tag@digest`, bases par digest, `requirements.txt` à empreintes, contrôle des dérogations.
+  Sept incidents. Voir `docs/rapport/04-jalon-4.md`, ADR 0010 et 0011.
+- **Jalon 5 — prochain.** Kyverno + ArgoCD. Vérifier d'abord que Kyverno lit les signatures
+  cosign v3 (bundles v0.3, rangés sur GHCR par tag `sha256-<digest>`, pas d'API referrers).
+- **En attente** : trier les PR Dependabot ouvertes (#9 à #17) selon la politique du dépôt.
 
 Les paquets GHCR `ssf-api` et `ssf-web` sont publics (vérifié le 28/09 : tirage anonyme OK).
 Ingress : Traefik par NodePort, pas ingress-nginx (retiré en mars 2026) — ADR 0007.
@@ -54,6 +60,7 @@ make chart-lint    # helm lint + rendu + trivy du chart k8s/chart (inclus dans i
 make app-proof     # preuve 3a : app servie par Traefik sur 127.0.0.1:8081, pods non-root, lecture seule
 make isolation-proof # preuve 3b : 8 tests réseau + identité, OUVERT/BLOQUÉ (même commande avant/après)
 make isolation-check # idem + verdict strict ; échoue en local sur les tests réseau (WSL2, incident I8)
+make supply-chain-proof # preuve jalon 4 : signature, SBOM, digest, qui peut signer, build figé
 ```
 
 Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make infra-up`.
@@ -77,6 +84,15 @@ Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make inf
 - **NetworkPolicies non appliquées en local** : le noyau WSL2 n'a pas `NFT_QUEUE` (incident I8) ;
   la preuve réseau se fait en CI (workflow `e2e`). `make isolation-check` échoue en local, c'est
   attendu.
+- **État Terraform de la couche cluster hors du dépôt** : `~/.local/state/ssf/cluster.tfstate`
+  (il contient la clé privée administrateur du cluster ; incident J4-I6). Ne jamais le remettre
+  dans `infra/terraform/cluster/`.
+- **Docker dans WSL ne télécharge plus d'image publique** (`error getting credentials`) : assistant
+  d'identifiants de Docker Desktop. Contournement ponctuel :
+  `DOCKER_CONFIG=$(mktemp -d) docker pull <image>`.
+- **Python 3.10 dans WSL, 3.14 dans l'image et la CI** : le venv local s'installe depuis
+  `requirements.in` (sans empreintes). `requirements.txt` se régénère dans l'image de production
+  (commande en tête de `app/api/requirements.in`), jamais avec le Python du poste.
 - **Un cluster kind est jetable** : un redémarrage de Docker Desktop l'emporte, avec l'état
   platform qu'il contient. `make infra-up` reconstruit tout. Le provider plante au `plan` si le
   cluster a disparu → `terraform state rm kind_cluster.this` puis `apply`.
@@ -84,7 +100,12 @@ Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make inf
 ## Conventions du dépôt (à respecter absolument)
 
 - **Actions GitHub épinglées par SHA** de commit (jamais un tag flottant), tag en commentaire.
-- **Images taguées par SHA**, jamais `latest`.
+- **Images taguées par SHA**, jamais `latest` ; déployées par `tag@digest` ; images de base des
+  Dockerfiles épinglées par digest.
+- **Dépendances Python** : on modifie `app/api/requirements.in`, on régénère `requirements.txt`
+  (empreintes) ; installation de l'application toujours en `--require-hashes`.
+- **Permissions CI au moindre privilège** : `contents: read` au niveau du workflow, droits
+  d'écriture job par job ; `id-token` et `packages` réservés au job `images` (ADR 0011).
 - **Machines de CI figées** (`runs-on: ubuntu-24.04`), jamais `ubuntu-latest` : une montée de
   version du système de la CI est un commit choisi et vérifié.
 - **Aucun secret statique** : la CI pousse sur GHCR avec le `GITHUB_TOKEN` du job (OIDC).

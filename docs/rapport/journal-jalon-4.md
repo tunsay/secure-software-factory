@@ -427,6 +427,55 @@ celle qui est en production.
   ```
   Le test distingue les deux configurations : on peut s'y fier.
 
+## APRÈS 4b — CI, déploiement, preuve finale (03/10)
+
+**Commit `f159b94`**, run `ci` 37132553326 : tout vert. `pip-audit --disable-pip` et le contrôle
+des dérogations passent sur GitHub ; les deux images, **construites depuis les bases épinglées et
+avec les empreintes Python**, sont publiées, signées, vérifiées. Workflow `e2e` vert (l'état du
+cluster au nouvel emplacement fonctionne aussi sur une machine neuve).
+
+**Permissions, lues dans le journal réel de chaque job** (même méthode que l'« avant ») :
+```
+== api · lint            Contents: read   Metadata: read
+== web · lint            Contents: read   Metadata: read
+== build + trivy · api   Contents: read   Metadata: read   Packages: write   SecurityEvents: write
+```
+Avant : `Packages: write` et `SecurityEvents: write` sur `api` (et `id-token` sur tous les jobs).
+Après : les jobs qui installent des paquets tiers ne peuvent plus que lire.
+
+**Déploiement** : `make infra-up` — couche cluster `No changes` (état lu au nouvel emplacement),
+couche platform `0 to add, 1 to change, 0 to destroy` : images de `f159b94`.
+
+**`make supply-chain-proof`, état final** :
+```
+== api : ghcr.io/tunsay/ssf-api:f159b944b9f7b2b4e2ffb87c2fe6b097fdc1a24a@sha256:a0269bc4f1a0674940d19a8ecd6b189e41680fbda4820383d66b62dfed8f6ef7
+OUI      signature valide, identité vérifiée
+OUI      2812 composants décrits
+OUI      épinglée par digest : le contenu ne peut pas changer
+== web : ghcr.io/tunsay/ssf-web:f159b944b9f7b2b4e2ffb87c2fe6b097fdc1a24a@sha256:2395df19284130fb2007b023b3d1137912da14ee2f348e0e98d349e24b8799d5
+OUI      signature valide, identité vérifiée
+OUI      1282 composants décrits
+OUI      épinglée par digest : le contenu ne peut pas changer
+== image d'avant le jalon 4, jamais signée
+REFUSÉE  error during command execution: no signatures found
+== image api déployée, en exigeant une autre identité (workflow e2e)
+REFUSÉE  failed to verify certificate identity: ... expected SAN value ".../e2e.yml@refs/heads/main",
+         got ".../ci.yml@refs/heads/main"
+== jobs de ci.yml autorisés à obtenir un jeton OIDC
+OUI      seul le job images (publication), qui n'installe aucun paquet sur le runner
+== images de base épinglées par digest
+4/4
+== dépendances Python vérifiées par empreinte
+OUI      515 empreintes dans app/api/requirements.txt
+== dérogations de sécurité expirées détectées
+OUI      contrôle en place : 3 dérogation(s), aucune expirée
+```
+Puis `make app-proof` vert : l'application tourne avec les images entièrement durcies.
+
+**Dependabot**, au passage : 9 PR ouvertes après ce push, dont plusieurs contraires à la
+politique du dépôt (`node 24 → 25`, non LTS ; `typescript 5 → 6` et `hashicorp/kubernetes 2 → 3`,
+majeures). À trier à la main, hors du jalon 4.
+
 ## Incidents
 
 ### J4-I1 — gitleaks prend un SHA de commit pour une clé d'API

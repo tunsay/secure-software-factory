@@ -20,7 +20,7 @@ fournisseur cloud (ADR 0004), coût zéro.
 | 1 | Socle applicatif + chaîne de contrôle | pipeline SAST/SCA/scan | **terminé** |
 | 2 | Terraform pilote le cluster | PSS restricted, GHCR OIDC, job IaC | **terminé** |
 | 3 | Déploiement + cloisonnement | Helm, Traefik, NetworkPolicies, RBAC, preuve e2e | **terminé** |
-| 4 | Chaîne d'approvisionnement | SBOM, signature Cosign, digests | à faire |
+| 4 | Chaîne d'approvisionnement | SBOM, signature Cosign, digests, empreintes, moindre privilège CI | **terminé** |
 | 5 | Policy as code + GitOps | Kyverno, ArgoCD | à faire |
 | 6 | Observabilité + DAST + récit | Prometheus/Grafana, ZAP, menaces | à faire |
 
@@ -93,9 +93,15 @@ Prérequis : paquets GHCR `ssf-api` et `ssf-web` publics — vérifié, c'était
 
 ---
 
-## Jalon 4 — Chaîne d'approvisionnement · À FAIRE
+## Jalon 4 — Chaîne d'approvisionnement · TERMINÉ
 
-Prouver l'intégrité de ce qui est déployé, du build au registre.
+Prouver l'intégrité de ce qui est déployé, du build au registre. Détail, preuves et sept
+incidents : `04-jalon-4.md` ; notes brutes : `journal-jalon-4.md`.
+
+Réalisé : tout le périmètre ci-dessous, plus le moindre privilège des jobs CI (ADR 0011), la
+publication de l'image exacte qui a été scannée, et l'état Terraform du cluster sorti du dépôt.
+Écart au plan : le SBOM n'est pas exhaustif — le code JavaScript regroupé par Vite n'y apparaît
+pas comme bibliothèques (angle mort documenté).
 
 - SBOM CycloneDX généré par Syft à chaque build, publié comme artefact.
 - Signature des images par Cosign en mode **keyless** (identité OIDC GitHub — cohérent avec le
