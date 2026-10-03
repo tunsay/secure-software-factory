@@ -458,7 +458,7 @@ le réglage standard des dépôts partagés (`core.trustctime=false`, `core.chec
 | Annotation `kubernetes.io/ingress.class` dépréciée | assumé (ADR 0008) | réévaluer avec Gateway API |
 | Provider kind : clé privée en clair au plan | limite de l'outil | ne jamais capturer ce plan ; à consigner dans un ADR |
 | Pas de HPA | assumé : API à état en mémoire, pas de metrics-server | jalon 6 avec les métriques |
-| `ubuntu-latest` passe à Ubuntu 26 le 19/10 (workflow `ci`) | à traiter | épingler avant cette date (`e2e` déjà en `ubuntu-24.04`) |
+| ~~`ubuntu-latest` passe à Ubuntu 26.04 à partir du 19/10~~ | **fermé** le 03/10 : `ci` et `e2e` figés en `ubuntu-24.04` | montée vers 26.04 : un commit choisi, CI vérifiée |
 | `kubectl` 1.37 sur le runner, cluster 1.35 | à surveiller | installer un `kubectl` aligné si une commande diverge |
 | Node 22 sur le poste, Node 24 en CI et dans l'image | écart d'environnement | aligner le poste |
 | Dépôt sur `/mnt/c`, partagé entre git Windows et git WSL | atténué (incident 10) | déplacer le dépôt dans le système de fichiers WSL |

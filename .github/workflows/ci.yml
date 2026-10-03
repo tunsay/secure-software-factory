@@ -1,6 +1,10 @@
 # Pipeline de référence — version semaine 1.
 # Étages : secrets → lint/SAST → SCA → tests → build → scan image.
 # S4 ajoutera : Checkov (IaC), SBOM Syft, signature Cosign, épinglage des actions par SHA.
+#
+# Machines figées en ubuntu-24.04, jamais ubuntu-latest : même logique que les actions épinglées
+# par SHA. ubuntu-latest bascule vers Ubuntu 26.04 entre le 19/10 et le 19/11/2026 ; une montée
+# de version du système de la CI doit être un commit choisi et vérifié, pas une surprise.
 name: ci
 
 on:
@@ -21,7 +25,7 @@ concurrency:
 jobs:
   secrets:
     name: gitleaks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
@@ -31,7 +35,7 @@ jobs:
 
   api:
     name: api · lint / SAST / SCA / tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults: { run: { working-directory: app/api } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,7 +53,7 @@ jobs:
 
   web:
     name: web · lint / SAST / SCA / build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults: { run: { working-directory: app/web } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,7 +68,7 @@ jobs:
 
   semgrep:
     name: semgrep (SAST multi-langage)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: semgrep/semgrep
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -75,7 +79,7 @@ jobs:
 
   iac:
     name: terraform + chart · fmt / validate / checkov / helm lint / trivy config
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -127,7 +131,7 @@ jobs:
     # Jusqu'au jalon 3, seuls api et web étaient requis, et une image a été publiée alors que
     # semgrep échouait (journal jalon 3, incident I7).
     needs: [secrets, api, web, semgrep, iac]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         svc: [api, web]

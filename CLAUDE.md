@@ -85,6 +85,8 @@ Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make inf
 
 - **Actions GitHub épinglées par SHA** de commit (jamais un tag flottant), tag en commentaire.
 - **Images taguées par SHA**, jamais `latest`.
+- **Machines de CI figées** (`runs-on: ubuntu-24.04`), jamais `ubuntu-latest` : une montée de
+  version du système de la CI est un commit choisi et vérifié.
 - **Aucun secret statique** : la CI pousse sur GHCR avec le `GITHUB_TOKEN` du job (OIDC).
 - **Zéro secret dans le dépôt** : gitleaks en pre-commit + CI. `.tfstate`, `.tfvars` sensibles et
   `*.sarif` sont dans `.gitignore`.

@@ -615,6 +615,22 @@ même code, noyau avec `NFT_QUEUE` → appliquées.
   Et « Another git process seems to be running » peut désigner un processus qui n'existe plus
   depuis quelques millisecondes.
 
+### Après clôture : version d'Ubuntu de la CI figée (03/10)
+
+- **Constat** : chaque run affichait une annotation GitHub. Vérifié sur l'annonce officielle
+  (actions/runner-images#14748) : `ubuntu-latest` passe d'Ubuntu 24.04 à **26.04**, déploiement
+  progressif du 19/10 au 19/11/2026 ; recommandation de l'éditeur pour rester sur la version
+  actuelle : le label `ubuntu-24.04`.
+- **Risque évité** : un changement de système d'exploitation de la CI, sans commit, en cours de
+  projet. Versions d'outils préinstallés, noyau (dont dépend la preuve réseau, incident I8),
+  paquets : tout pouvait bouger d'un run à l'autre.
+- **Correction** : les 6 jobs du workflow `ci` passent de `ubuntu-latest` à `ubuntu-24.04`
+  (le workflow `e2e` l'était déjà). C'est exactement la version utilisée aujourd'hui : aucun
+  changement de comportement, seulement la fin de la surprise. Même logique que l'épinglage des
+  actions par SHA.
+- **Suite** : la montée vers 26.04 se fera par un commit dédié, CI vérifiée, quand elle sera
+  choisie.
+
 ### Fin du jalon (03/10)
 
 Run `ci` 37127783704 sur `8bfb3b0` : **7 jobs sur 7 verts**. Les images `ssf-api` et `ssf-web`
