@@ -1,29 +1,52 @@
 # infra/ — Terraform
 
-Deux couches, comme sur un cloud : un bootstrap en état local, puis une plateforme en état distant.
+Deux couches, comme sur un cloud : un bootstrap qui crée le cluster, puis une plateforme qui le
+configure. Pas de fournisseur cloud : Terraform pilote un cluster kind local
+([ADR 0004](../docs/adr/0004-terraform-sans-fournisseur-cloud.md)).
 
 ```
 terraform/
-  cluster/     crée le cluster kind — état local (bootstrap)
-  platform/    configure le cluster — état distant (backend kubernetes, verrou par lease)
+  cluster/       crée le cluster kind (1 control-plane, 2 workers), image de nœud épinglée par digest
+  platform/
+    main.tf      namespaces ssf (application), ingress, security
+    ingress.tf   Traefik : NodePort, droits limités aux namespaces servis
+    network.tf   NetworkPolicies : tout fermé, puis Traefik → web → api et DNS
+    app.tf       l'application, depuis k8s/chart, par digest
   modules/
-    namespace/ namespace durci : Pod Security Standards restricted, quota, limites
+    namespace/   namespace durci : Pod Security Standards restricted, quota, limites, compte
+                 « default » sans jeton
 ```
+
+## Où vivent les états Terraform
+
+| Couche | État | Pourquoi |
+|---|---|---|
+| `cluster` | **`~/.local/state/ssf/cluster.tfstate`**, dans le dossier personnel WSL (droits 700), **hors du dépôt** | il contient la clé privée administrateur du cluster, en clair (provider `tehcyx/kind`) — incident J4-I6 |
+| `platform` | Secret du cluster, namespace `terraform-state`, verrou par lease | état distant ; sa durée de vie est celle du cluster |
+
+Le kubeconfig est lui aussi hors du dépôt : `~/.kube/ssf-dev`.
 
 ## Commandes
 
 ```bash
-make infra-up      # cluster puis platform, apply enchaînés
-make infra-plan    # plan de la couche platform
-make infra-lint    # fmt, validate, checkov, trivy config — ce que la CI exécute
+make infra-up      # cluster puis platform ; chaque apply affiche son plan et attend « yes »
+make infra-plan    # plan de la couche platform, sans appliquer
+make infra-lint    # chart-lint, fmt, validate, Checkov, trivy config — ce que la CI exécute
 make infra-down    # destroy platform puis cluster
 ```
 
+La CI e2e appelle le même `make infra-up`, avec `TF_APPLY_FLAGS=-auto-approve`, sur un cluster
+éphémère.
+
 ## Règles
 
-- Aucun secret dans le code. Le kubeconfig est écrit hors du dépôt (`~/.kube/ssf-dev`).
+- Aucun secret dans le code. États et kubeconfig contenant des identifiants : hors du dépôt.
 - Versions de providers épinglées, `.terraform.lock.hcl` commité.
-- Tout changement passe par `plan` avant `apply`. Jamais de `kubectl apply` à la main sur
-  ce que Terraform gère.
-- Voir [ADR 0004](../docs/adr/0004-terraform-sans-fournisseur-cloud.md) pour le choix
-  d'un cluster local plutôt qu'un cloud.
+- Tout changement passe par `plan` avant `apply`. Jamais de `kubectl apply` à la main sur ce que
+  Terraform gère.
+- Ne jamais copier ni capturer le plan d'un **remplacement** du cluster : il affiche la clé
+  privée en clair (incident I2 du jalon 3).
+
+Décisions liées : [ADR 0007](../docs/adr/0007-ingress-traefik-nodeport.md) (Traefik, NodePort),
+[ADR 0008](../docs/adr/0008-cloisonnement-reseau-et-droits.md) (cloisonnement),
+[ADR 0009](../docs/adr/0009-preuve-reseau-en-ci-ephemere.md) (preuve réseau en CI).
