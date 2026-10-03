@@ -352,7 +352,84 @@ le cloisonnement réseau est prouvé sur un **cluster éphémère en CI**, dont 
 
 ### Après — sur le cluster éphémère de la CI
 
-*À venir : résultat du premier run du workflow `e2e`.*
+Workflow `e2e`, run 37126660256, commit `a0c1a08`, 3 octobre : cluster construit de zéro par le
+même `make infra-up`, **en 1 min 48 s** tout compris. Extraits des journaux (`gh run view --log`) :
+
+```
+6.17.0-1022-azure
+CONFIG_NETFILTER_NETLINK_QUEUE=m
+CONFIG_NFT_QUEUE=m                       ◄ la fonction absente du noyau WSL2
+
+BLOQUÉ   URLError: <urlopen error timed out>                       1. api -> web
+BLOQUÉ   URLError: <urlopen error [Errno 101] Network is unreachable>   2. api -> Internet
+BLOQUÉ   aucune réponse de api.ssf                                  3. default -> api
+OUVERT   réponse de api depuis web                                  4. web -> api
+OUVERT   127.0.0.1:8081/api/health                                  5. chemin complet
+BLOQUÉ   FileNotFoundError: aucun jeton dans /var/run/secrets/kubernetes.io/serviceaccount/
+BLOQUÉ   FileNotFoundError: [Errno 2] No such file or directory: '.../token'
+   Secrets du namespace terraform-state (état Terraform) : no
+   Secrets de tout le cluster                            : no
+
+attendu : BLOQUÉ BLOQUÉ BLOQUÉ OUVERT OUVERT BLOQUÉ BLOQUÉ no no
+obtenu  : BLOQUÉ BLOQUÉ BLOQUÉ OUVERT OUVERT BLOQUÉ BLOQUÉ no no
+ISOLATION CONFORME
+```
+
+Le point le plus parlant est la paire 1 / 4 : **web joint api, api ne joint pas web**. Même réseau,
+mêmes pods, flux refusé dans un sens et accepté dans l'autre. Ce n'est pas une panne du réseau,
+c'est une politique appliquée. `make app-proof` passe aussi dans la foulée : l'application sert
+toujours ses pages derrière ce cloisonnement.
+
+Limite honnête : en CI, seul l'« après » est mesuré. L'« avant » l'a été sur le poste. Pour le
+test 2, le message `Network is unreachable` est cohérent avec un refus, mais rien dans ce run ne
+prouve qu'un pod du runner aurait atteint Internet sans politique. Mesurer l'avant **et** l'après
+dans le même run (appliquer la plateforme sans les politiques, mesurer, puis avec) fermerait ce
+doute.
+
+### Synthèse du jalon 3b
+
+| | Avant | Après, poste (WSL2) | Après, CI (noyau Ubuntu) |
+|---|---|---|---|
+| 1. api → web | ouvert | ouvert (I8) | **bloqué** |
+| 2. api → Internet | ouvert | ouvert (I8) | **bloqué** |
+| 3. autre namespace → api | ouvert | ouvert (I8) | **bloqué** |
+| 4, 5. flux légitimes | ouverts | ouverts | ouverts |
+| 6. jeton monté | oui | **non** | **non** |
+| 7. jeton accepté par l'API | oui | **impossible** | **impossible** |
+| 8. Traefik lit tous les Secrets | oui | **non** | **non** |
+
+La CI vérifie désormais ce tableau à chaque changement d'infrastructure, et chaque lundi.
+
+### Ce qui a cassé, et ce que ça a appris (3b)
+
+**8. Des NetworkPolicies acceptées, et ignorées.** Cinq politiques créées sans erreur, pods
+prêts, `apply` vert — et aucun flux bloqué. Le noyau WSL2 n'a pas `NFT_QUEUE`, kindnet ne peut pas
+écrire ses règles et laisse tout passer, sans rien signaler à Kubernetes. Diagnostic en lecture
+seule (journaux kindnet, `/proc/config.gz`), contre-épreuve en CI sur un noyau qui l'a : appliquées.
+*Leçon : « créé sans erreur » ne dit rien de « appliqué ». Seul un test négatif le prouve.*
+
+**9. La CI passe au rouge sans qu'une ligne ne change.** Trois avis de sécurité publiés entre deux
+pushes sur `brace-expansion`, dépendance indirecte d'ESLint. Dépendance de développement, absente
+de l'image : risque quasi nul en production. Mais le job de publication est passé en `skipped` :
+**aucune image n'est partie**. C'est la correction de l'incident 7, vérifiée en conditions réelles.
+Corrigé par `npm audit fix` sans `--force` (5.0.9 → 5.0.12).
+*Leçon : la connaissance des vulnérabilités avance même quand le code ne bouge pas.*
+
+---
+
+## État en fin de jalon
+
+- **3a** : l'application tourne dans le cluster derrière Traefik, sans aucune exception à PSS
+  restricted, exposée sur `127.0.0.1` uniquement (`make app-proof`).
+- **3b** : réseau fermé par défaut dans `ssf`, aucun jeton Kubernetes dans les pods applicatifs,
+  Traefik limité aux namespaces qu'il sert (`make isolation-proof`).
+- Preuve automatisée : workflow `e2e`, cluster éphémère construit par le même `make infra-up`,
+  `make isolation-check` exige les huit verdicts. À chaque changement d'infrastructure et chaque
+  lundi.
+- CI : publication des images conditionnée à **tous** les contrôles (incident 7), vérifiée en
+  conditions réelles (incident 9).
+- Trois ADR : 0007 (Traefik, NodePort), 0008 (cloisonnement), 0009 (preuve en CI).
+- Neuf incidents documentés, dont aucun dans le code de l'application.
 
 ---
 
@@ -360,11 +437,17 @@ le cloisonnement réseau est prouvé sur un **cluster éphémère en CI**, dont 
 
 | Point | Statut | Traitement prévu |
 |---|---|---|
-| Réseau plat entre pods et namespaces | ouvert | NetworkPolicies, 3b |
-| Token de ServiceAccount monté dans les pods | ouvert | RBAC minimal, 3b |
-| Traefik lit tout le cluster (ClusterRole) | ouvert | restreindre aux namespaces servis, 3b |
+| ~~Réseau plat entre pods~~ | **fermé** dans `ssf` (3b) | — |
+| ~~Jeton de ServiceAccount monté dans les pods~~ | **fermé** (3b) | — |
+| ~~Traefik lit tous les Secrets du cluster~~ | **fermé** (3b) | — |
+| NetworkPolicies non appliquées sur le poste (WSL2 sans `NFT_QUEUE`) | assumé (ADR 0009) | Calico si le poste doit filtrer ; noyau WSL2 vérifié compatible |
+| En CI, l'« après » seul est mesuré | ouvert | mesurer avant et après dans le même run e2e |
+| Namespaces `ingress` et `security` sans NetworkPolicy | ouvert | à étendre, `security` avant Kyverno (jalon 5) |
+| Traefik lit encore les Secrets de `ssf` et `ingress` | limite du chart | `rbac.secretResourceNames`, comportement à vérifier |
+| Annotation `kubernetes.io/ingress.class` dépréciée | assumé (ADR 0008) | réévaluer avec Gateway API |
 | Provider kind : clé privée en clair au plan | limite de l'outil | ne jamais capturer ce plan ; à consigner dans un ADR |
-| API Ingress gelée, Gateway API à terme | assumé (ADR 0007) | migration possible sans changer de contrôleur |
 | Pas de HPA | assumé : API à état en mémoire, pas de metrics-server | jalon 6 avec les métriques |
-| `ubuntu-latest` passe à Ubuntu 26 le 19/10 | à traiter | épingler la version du runner avant cette date |
+| `ubuntu-latest` passe à Ubuntu 26 le 19/10 (workflow `ci`) | à traiter | épingler avant cette date (`e2e` déjà en `ubuntu-24.04`) |
+| `kubectl` 1.37 sur le runner, cluster 1.35 | à surveiller | installer un `kubectl` aligné si une commande diverge |
+| Node 22 sur le poste, Node 24 en CI et dans l'image | écart d'environnement | aligner le poste |
 | Images tirées par tag (SHA de commit), pas par digest | ouvert | jalon 4 |

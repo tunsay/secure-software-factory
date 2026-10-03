@@ -19,7 +19,7 @@ fournisseur cloud (ADR 0004), coût zéro.
 |---|---|---|---|
 | 1 | Socle applicatif + chaîne de contrôle | pipeline SAST/SCA/scan | **terminé** |
 | 2 | Terraform pilote le cluster | PSS restricted, GHCR OIDC, job IaC | **terminé** |
-| 3 | Déploiement + cloisonnement | Helm, NetworkPolicies, RBAC | à faire |
+| 3 | Déploiement + cloisonnement | Helm, Traefik, NetworkPolicies, RBAC, preuve e2e | **terminé** |
 | 4 | Chaîne d'approvisionnement | SBOM, signature Cosign, digests | à faire |
 | 5 | Policy as code + GitOps | Kyverno, ArgoCD | à faire |
 | 6 | Observabilité + DAST + récit | Prometheus/Grafana, ZAP, menaces | à faire |
@@ -56,9 +56,14 @@ Preuve : pod root refusé à l'admission ; démonstration avant/après (`make at
 
 ---
 
-## Jalon 3 — Déploiement dans le cluster et cloisonnement · À FAIRE
+## Jalon 3 — Déploiement dans le cluster et cloisonnement · TERMINÉ
 
-Découpé en deux livrables présentables séparément.
+Découpé en deux livrables présentables séparément. Détail, preuves et neuf incidents :
+`03-jalon-3.md` ; notes brutes : `journal-jalon-3.md`.
+
+Réalisé : 3a et 3b complets. Écart au plan : les NetworkPolicies ne sont **pas** appliquées sur
+le poste (noyau WSL2 sans `NFT_QUEUE`, incident I8) ; elles sont prouvées sur un cluster éphémère
+en CI, workflow `e2e` (ADR 0009). Bonus (Sealed Secrets, kube-bench) reportés au jalon 5.
 
 Prérequis : paquets GHCR `ssf-api` et `ssf-web` publics — vérifié, c'était déjà le cas.
 

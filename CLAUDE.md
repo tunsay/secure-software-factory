@@ -14,7 +14,7 @@ Stack décidée après analyse de 10 offres DevSecOps CDI (voir `docs/rapport/00
 React+TypeScript (front minimal), Python/FastAPI (back), Terraform, Kubernetes (kind local),
 GitHub Actions + GitLab CI en miroir, GHCR.
 
-## Où on en est (28 sept. 2026)
+## Où on en est (3 oct. 2026)
 
 - **Jalon 1 — terminé.** App minimale, images durcies, chaîne de scan locale + CI. Voir
   `docs/rapport/01-jalon-1.md`.
@@ -22,10 +22,11 @@ GitHub Actions + GitLab CI en miroir, GHCR.
   le compte AWS a été écarté car Tunsay ne veut pas communiquer ses coordonnées). Namespaces
   durcis PSS restricted, backend d'état distant, registre GHCR par OIDC, job IaC en CI,
   démonstration d'attaque avant/après. Voir `docs/rapport/02-jalon-2.md`.
-- **Jalon 3 — à faire.** Découpé en 3a (déployer l'app dans le cluster : chart Helm + ingress,
-  installés par Terraform) et 3b (cloisonnement : NetworkPolicies deny-by-default, RBAC minimal ;
-  prouver que l'API ne peut plus joindre le front — l'« après » du test réseau du jalon 1).
-  Sealed Secrets + kube-bench en bonus ou reportés au jalon 5.
+- **Jalon 3 — terminé (03/10).** 3a : app déployée par Terraform + Helm derrière Traefik
+  (NodePort, 127.0.0.1). 3b : NetworkPolicies, comptes sans jeton, Traefik namespacé, preuve
+  sur cluster éphémère en CI (workflow `e2e`). Neuf incidents. Voir `docs/rapport/03-jalon-3.md`.
+  Sealed Secrets + kube-bench reportés au jalon 5.
+- **Jalon 4 — prochain.** SBOM, signature Cosign keyless, digests (voir le plan).
 
 Les paquets GHCR `ssf-api` et `ssf-web` sont publics (vérifié le 28/09 : tirage anonyme OK).
 Ingress : Traefik par NodePort, pas ingress-nginx (retiré en mars 2026) — ADR 0007.

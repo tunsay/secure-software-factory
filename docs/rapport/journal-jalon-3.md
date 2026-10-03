@@ -498,6 +498,86 @@ entièrement vert (aucune régression du 3a).
   local serait un test faux. `make infra-lint` vert. `make semgrep` silencieux sur le nouveau
   script de sondes : aucune dérogation ajoutée par avance (une `nosemgrep` préventive avait été
   écrite puis retirée avant le premier scan — on ne déroge qu'à une alerte constatée).
+- **Commit `a0c1a08`** : hooks exécutés une seule fois chacun (`default_stages` corrigé).
+
+### APRÈS — CI, cluster éphémère (run e2e 37126660256, 03/10)
+
+Succès en 1 min 48 s. Noyau du runner `6.17.0-1022-azure`, `CONFIG_NFT_QUEUE=m`.
+
+```
+BLOQUÉ   URLError: <urlopen error timed out>                            (1. api -> web)
+BLOQUÉ   URLError: <urlopen error [Errno 101] Network is unreachable>   (2. api -> Internet)
+BLOQUÉ   aucune réponse de api.ssf                                      (3. default -> api)
+OUVERT   réponse de api depuis web                                      (4. web -> api)
+OUVERT   127.0.0.1:8081/api/health                                      (5. chemin complet)
+BLOQUÉ   FileNotFoundError: aucun jeton dans /var/run/secrets/kubernetes.io/serviceaccount/
+BLOQUÉ   FileNotFoundError: [Errno 2] No such file or directory: '.../token'
+   Secrets du namespace terraform-state (état Terraform) : no
+   Secrets de tout le cluster                            : no
+attendu : BLOQUÉ BLOQUÉ BLOQUÉ OUVERT OUVERT BLOQUÉ BLOQUÉ no no
+obtenu  : BLOQUÉ BLOQUÉ BLOQUÉ OUVERT OUVERT BLOQUÉ BLOQUÉ no no
+ISOLATION CONFORME
+```
+Puis `make app-proof` vert. **Hypothèse I8 confirmée par la contre-épreuve** : mêmes politiques,
+même code, noyau avec `NFT_QUEUE` → appliquées.
+
+- Paire décisive : 4 ouvert, 1 bloqué. Même réseau, sens opposés : c'est la politique, pas une
+  panne.
+- Test 1 : `timed out` (paquets ignorés). Test 2 : `Network is unreachable` (refus actif, ou
+  route IPv6 absente sur le runner — non tranché).
+- Limite : pas d'« avant » mesuré en CI. Pour le test 2 en particulier, rien dans ce run ne
+  prouve qu'un pod du runner aurait atteint Internet sans politique. Amélioration notée : mesurer
+  avant et après dans le même run.
+
+#### I9 — CI rouge : `npm audit` sur une dépendance jamais modifiée… et l'image ne part pas
+
+- **Symptôme** : même commit `a0c1a08`, workflow `ci` en échec, job `web`, étape
+  `npm audit (SCA)`. `app/web` n'a pas changé depuis le jalon 1.
+- **Cause** (`npm audit --audit-level=high` en local) :
+  ```
+  brace-expansion  4.0.0 - 5.0.11
+  Severity: high
+  GHSA-q2hr-2g5m-vwhr  Quadratic-time expansion ... CPU denial of service
+  GHSA-qhr7-859c-m2p7  DoS via uncontrolled recursion on nested brace groups
+  GHSA-6j4f-fj2g-mc7p  DoS via uncontrolled recursion in parseCommaParts
+  fix available via `npm audit fix`
+  ```
+  Trois avis publiés entre deux pushes, sur une dépendance indirecte. Le code n'a pas bougé, la
+  connaissance des vulnérabilités, si.
+- **Ce qui s'est passé ensuite — la correction I7 en conditions réelles** : le job de publication
+  `build + trivy` est passé en **`skipped`**. Aucune image n'est partie sur GHCR. Avant I7, elle
+  serait partie malgré l'alerte.
+- **Gravité réelle** (`npm ls brace-expansion`) :
+  ```
+  ssf-web@0.1.0
+  `-- eslint@10.10.0
+    `-- minimatch@10.2.6
+      `-- brace-expansion@5.0.9
+  ```
+  Dépendance de l'outil de lint, `"dev": true` dans le lockfile. Elle n'entre jamais dans l'image,
+  qui ne contient que les fichiers statiques produits par Vite. Risque réel quasi nul pour la
+  production ; le blocage reste justifié — la règle « HIGH bloque » ne fait pas d'exception au
+  cas par cas, et une machine de build compromise par un DoS reste une machine de build.
+- **Correction** : `npm audit fix` **sans `--force`** (mises à jour compatibles uniquement, pas de
+  saut de version majeure — politique Dependabot du dépôt) : `brace-expansion 5.0.9 → 5.0.12`.
+  Puis, comme le job `web` de la CI : `npm audit` → `found 0 vulnerabilities`, `eslint` + `tsc`
+  OK, `vite build` OK. Seul fichier modifié : `app/web/package-lock.json`.
+- **Effet de bord, sain** : la racine du lockfile passe de `"node": ">=20"` à `">=24"`. Le
+  `package.json` exigeait Node 24 depuis le commit `f82a905`, mais le lockfile n'avait jamais été
+  régénéré. Incohérence silencieuse corrigée au passage.
+- **Écart d'environnement relevé** : `npm warn EBADENGINE ... current: { node: 'v22.22.2' }`. Le
+  poste tourne en Node 22, la CI et l'image en Node 24. Sans effet aujourd'hui ; à aligner.
+- **Incident annexe au commit** : deux commits enchaînés (`sec:` puis `docs:`). Le premier
+  passe (`0d43647`) ; le second échoue sur `fatal: Unable to create '.git/index.lock': File
+  exists`. Vérifié juste après, sans prendre de verrou (`git --no-optional-locks status`) : le
+  verrou avait disparu, aucun fichier perdu, les cinq fichiers de docs toujours indexés. Cause
+  probable : collision de verrou entre les hooks pre-commit (qui mettent de côté puis restaurent
+  les fichiers non indexés) et un processus git côté Windows lisant le même dépôt sur `/mnt/c`
+  (application, vérifications de l'assistant). Non tranché ; relance simple. À retenir : un dépôt
+  partagé entre Windows et WSL voit des git concurrents.
+- **Leçon** : une CI peut passer au rouge sans qu'une ligne de code ne change. Ce n'est pas une
+  régression, c'est la connaissance des vulnérabilités qui avance — et la raison pour laquelle
+  le workflow `e2e` tourne aussi chaque lundi, sans commit.
 
 ### Risques surveillés à l'application
 
