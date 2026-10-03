@@ -24,7 +24,7 @@ GitHub Actions + GitLab CI en miroir, GHCR.
   démonstration d'attaque avant/après. Voir `docs/rapport/02-jalon-2.md`.
 - **Jalon 3 — terminé (03/10).** 3a : app déployée par Terraform + Helm derrière Traefik
   (NodePort, 127.0.0.1). 3b : NetworkPolicies, comptes sans jeton, Traefik namespacé, preuve
-  sur cluster éphémère en CI (workflow `e2e`). Neuf incidents. Voir `docs/rapport/03-jalon-3.md`.
+  sur cluster éphémère en CI (workflow `e2e`). Dix incidents. Voir `docs/rapport/03-jalon-3.md`.
   Sealed Secrets + kube-bench reportés au jalon 5.
 - **Jalon 4 — prochain.** SBOM, signature Cosign keyless, digests (voir le plan).
 
@@ -70,6 +70,13 @@ Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make inf
   0.31 : image épinglée `kindest/node:v1.35.0@sha256:452d70...`. Ne pas monter à v1.37.
 - **Ports ingress 8081/8444** (pas 80/443, refusés par le relais réseau de Docker Desktop sous
   Windows ; pas 8080/8000, pris par compose).
+- **Dépôt sur `/mnt/c`, partagé entre git WSL et git Windows** : collisions sur
+  `.git/index.lock` pendant les hooks (incident I10 du jalon 3). Réglé par
+  `core.trustctime=false` + `core.checkStat=minimal` dans `.git/config`. Côté Windows, l'assistant
+  n'utilise git qu'en `git --no-optional-locks` (lecture seule).
+- **NetworkPolicies non appliquées en local** : le noyau WSL2 n'a pas `NFT_QUEUE` (incident I8) ;
+  la preuve réseau se fait en CI (workflow `e2e`). `make isolation-check` échoue en local, c'est
+  attendu.
 - **Un cluster kind est jetable** : un redémarrage de Docker Desktop l'emporte, avec l'état
   platform qu'il contient. `make infra-up` reconstruit tout. Le provider plante au `plan` si le
   cluster a disparu → `terraform state rm kind_cluster.this` puis `apply`.

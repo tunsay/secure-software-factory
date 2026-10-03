@@ -58,7 +58,7 @@ Preuve : pod root refusé à l'admission ; démonstration avant/après (`make at
 
 ## Jalon 3 — Déploiement dans le cluster et cloisonnement · TERMINÉ
 
-Découpé en deux livrables présentables séparément. Détail, preuves et neuf incidents :
+Découpé en deux livrables présentables séparément. Détail, preuves et dix incidents :
 `03-jalon-3.md` ; notes brutes : `journal-jalon-3.md`.
 
 Réalisé : 3a et 3b complets. Écart au plan : les NetworkPolicies ne sont **pas** appliquées sur

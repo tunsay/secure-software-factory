@@ -567,15 +567,59 @@ même code, noyau avec `NFT_QUEUE` → appliquées.
   régénéré. Incohérence silencieuse corrigée au passage.
 - **Écart d'environnement relevé** : `npm warn EBADENGINE ... current: { node: 'v22.22.2' }`. Le
   poste tourne en Node 22, la CI et l'image en Node 24. Sans effet aujourd'hui ; à aligner.
-- **Incident annexe au commit** : deux commits enchaînés (`sec:` puis `docs:`). Le premier
-  passe (`0d43647`) ; le second échoue sur `fatal: Unable to create '.git/index.lock': File
-  exists`. Vérifié juste après, sans prendre de verrou (`git --no-optional-locks status`) : le
-  verrou avait disparu, aucun fichier perdu, les cinq fichiers de docs toujours indexés. Cause
-  probable : collision de verrou entre les hooks pre-commit (qui mettent de côté puis restaurent
-  les fichiers non indexés) et un processus git côté Windows lisant le même dépôt sur `/mnt/c`
-  (application, vérifications de l'assistant). Non tranché ; relance simple. À retenir : un dépôt
-  partagé entre Windows et WSL voit des git concurrents.
-- **Leçon** : une CI peut passer au rouge sans qu'une ligne de code ne change. Ce n'est pas une
+- **Leçon** : une CI peut passer au rouge sans qu'une ligne de code ne change.
+
+#### I10 — Quatre commits refusés : un verrou git fantôme sur le disque Windows
+
+- **Symptôme** : après `0d43647`, chaque tentative de commit échoue dans le hook pre-commit :
+  ```
+  An unexpected error has occurred: CalledProcessError: command: ('/usr/lib/git-core/git', 'write-tree')
+  fatal: Unable to create '/mnt/c/.../.git/index.lock': File exists.
+  ```
+  Juste avant et juste après : aucun `index.lock`, aucun processus git, `git write-tree` lancé seul
+  fonctionne. Rien de perdu à aucun moment (vérifié sans prendre de verrou :
+  `git --no-optional-locks log / diff --cached`).
+- **Trois fausses pistes, données trop vite** : collision ponctuelle ; commandes git enchaînées
+  trop vite ; verrou orphelin vu par WSL seulement. Chacune démentie par l'essai suivant. Le
+  tournant a été d'arrêter de deviner et de **mesurer**.
+- **Mesure** (surveillance de `.git/index.lock` toutes les 20 ms + `GIT_TRACE=1`) :
+  ```
+  15:48:42.388  git commit démarre
+  15:48:42.487 → 15:48:43.385  verrou visible (≈ 0,9 s : celui de git commit, normal)
+                               plus de verrou pendant 0,7 s (démarrage de pre-commit)
+  15:48:44.104  verrou visible     ◄ un nouveau verrou, de vie très courte
+  15:48:44.116  git write-tree     ◄ 12 ms après : « File exists »
+  15:48:44.131  verrou visible, puis plus rien
+  ```
+  Le code source de git 2.34.1 (`builtin/commit.c`, cas « As-is commit ») confirme que
+  `git commit` relâche son verrou (`COMMIT_LOCK`) **avant** d'exécuter les hooks : le verrou
+  gênant n'est pas le sien.
+- **Cause** : le dépôt vit sur le disque Windows (`/mnt/c`) et deux git y travaillent — celui de
+  WSL et ceux de Windows (application, commandes de l'assistant). Ils ne voient pas les mêmes
+  métadonnées de fichiers (inode, ctime, fractions de seconde) : chacun juge l'index périmé et le
+  réécrit, en posant un verrou à chaque fois. Sur `/mnt/c`, la disparition d'un verrou n'est
+  visible depuis WSL qu'avec un léger retard : le `write-tree` de pre-commit, lancé quelques
+  millisecondes après une de ces réécritures, trouve encore le verrou. La tentative avec
+  `git update-index --refresh` préalable a confirmé le mécanisme : premier passage de hooks
+  réussi, échec au second (`commit-msg`), après que l'index a de nouveau divergé.
+- **Correction** : réglage standard des dépôts partagés entre systèmes —
+  `git config core.trustctime false` et `git config core.checkStat minimal` (git ne compare plus
+  que la taille et la seconde de modification). Commit `8bfb3b0` passé du premier coup. Effet de
+  bord accepté : un fichier modifié dans la même seconde **et** à taille identique ne serait vu
+  qu'à la modification suivante.
+- **Mesure de prévention** : l'assistant ne lance plus `git` côté Windows qu'en
+  `--no-optional-locks` (lecture seule, sans toucher à l'index).
+- **Solution durable, non retenue pour l'instant** : déplacer le dépôt dans le système de
+  fichiers Linux de WSL.
+- **Leçon** : trois hypothèses plausibles, trois échecs ; une mesure horodatée, une réponse.
+  Et « Another git process seems to be running » peut désigner un processus qui n'existe plus
+  depuis quelques millisecondes.
+
+### Fin du jalon (03/10)
+
+Run `ci` 37127783704 sur `8bfb3b0` : **7 jobs sur 7 verts**. Les images `ssf-api` et `ssf-web`
+de `8bfb3b0` sont publiées (HTTP 200 sur GHCR) ; leur publication a démarré à 13:55:15, trois
+secondes après la fin du dernier contrôle (13:55:12). Ce n'est pas une
   régression, c'est la connaissance des vulnérabilités qui avance — et la raison pour laquelle
   le workflow `e2e` tourne aussi chaque lundi, sans commit.
 

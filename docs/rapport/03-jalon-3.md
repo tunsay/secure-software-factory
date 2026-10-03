@@ -415,6 +415,16 @@ de l'image : risque quasi nul en production. Mais le job de publication est pass
 Corrigé par `npm audit fix` sans `--force` (5.0.9 → 5.0.12).
 *Leçon : la connaissance des vulnérabilités avance même quand le code ne bouge pas.*
 
+**10. Un verrou git fantôme.** Quatre commits refusés d'affilée (`Unable to create
+'.git/index.lock': File exists`), alors qu'aucun verrou ni processus git n'existait avant ou
+après. Trois explications successives se sont révélées fausses ; une mesure horodatée (verrou
+surveillé toutes les 20 ms, `GIT_TRACE`) a montré un verrou de vie très courte apparu 12 ms avant
+l'opération refusée. Cause : le dépôt est sur le disque Windows, utilisé à la fois par git dans
+WSL et par git côté Windows, qui ne voient pas les mêmes métadonnées de fichiers et réécrivent
+l'index chacun leur tour ; la disparition d'un verrou n'y est visible qu'avec retard. Corrigé par
+le réglage standard des dépôts partagés (`core.trustctime=false`, `core.checkStat=minimal`).
+*Leçon : quand une hypothèse tombe, on ne la remplace pas par une autre — on mesure.*
+
 ---
 
 ## État en fin de jalon
@@ -429,7 +439,8 @@ Corrigé par `npm audit fix` sans `--force` (5.0.9 → 5.0.12).
 - CI : publication des images conditionnée à **tous** les contrôles (incident 7), vérifiée en
   conditions réelles (incident 9).
 - Trois ADR : 0007 (Traefik, NodePort), 0008 (cloisonnement), 0009 (preuve en CI).
-- Neuf incidents documentés, dont aucun dans le code de l'application.
+- Dix incidents documentés, dont aucun dans le code de l'application.
+- Dernier run `ci` (commit `8bfb3b0`) : 7 jobs sur 7 verts, images publiées.
 
 ---
 
@@ -450,4 +461,5 @@ Corrigé par `npm audit fix` sans `--force` (5.0.9 → 5.0.12).
 | `ubuntu-latest` passe à Ubuntu 26 le 19/10 (workflow `ci`) | à traiter | épingler avant cette date (`e2e` déjà en `ubuntu-24.04`) |
 | `kubectl` 1.37 sur le runner, cluster 1.35 | à surveiller | installer un `kubectl` aligné si une commande diverge |
 | Node 22 sur le poste, Node 24 en CI et dans l'image | écart d'environnement | aligner le poste |
+| Dépôt sur `/mnt/c`, partagé entre git Windows et git WSL | atténué (incident 10) | déplacer le dépôt dans le système de fichiers WSL |
 | Images tirées par tag (SHA de commit), pas par digest | ouvert | jalon 4 |
