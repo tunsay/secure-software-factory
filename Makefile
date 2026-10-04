@@ -28,7 +28,7 @@ CHART_VALUES := $(CHART)/values-dev.yaml
 
 .PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools \
         infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof isolation-proof isolation-check supply-chain-proof admission-proof drift-proof \
-        drift-check app-wait dast dast-check promote
+        drift-check app-wait dast dast-check promote posture-proof
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -250,3 +250,10 @@ dast: ## DAST : scan ZAP « baseline » (passif) + 4 expositions ciblées — m�
 
 dast-check: ## dast + verdict : échoue sur un avertissement ZAP ou une exposition (CI e2e)
 	@DAST_STRICT=1 bash scripts/dast.sh
+
+# ---------------------------------------------------------------------------
+# Observabilité (jalon 6b) : la posture de sécurité, mesurée en continu.
+# ---------------------------------------------------------------------------
+
+posture-proof: ## Preuve 6b : 7 questions de sécurité posées à Prometheus — même commande avant et après
+	@bash scripts/posture-proof.sh

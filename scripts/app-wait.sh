@@ -42,4 +42,7 @@ while :; do
   sleep 5
 done
 
-"${KUBECTL[@]}" -n ssf wait --for=condition=Ready pod -l app.kubernetes.io/name=ssf --timeout=180s
+# Attendre les Deployments, pas les pods : pendant un déploiement, un ancien pod listé au départ
+# peut disparaître au milieu de l'attente, et kubectl wait échoue alors (NotFound, journal du
+# jalon 6, J6-I1). « Healthy » pour ArgoCD veut déjà dire : nouvelle version entièrement prête.
+"${KUBECTL[@]}" -n ssf wait --for=condition=Available deployment/api deployment/web --timeout=180s
