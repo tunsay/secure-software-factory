@@ -18,27 +18,32 @@
            ghcr.io : image signée, SBOM attesté, référencée par digest
                  │
                  ▼
-  Terraform ──► cluster kind local (1 control-plane, 2 workers)
+  Terraform ──► cluster kind local (1 control-plane, 2 workers) : la plateforme
                  ├─ namespaces Pod Security Standards « restricted »
                  ├─ Traefik (NodePort, 127.0.0.1 uniquement)
                  ├─ NetworkPolicies deny-by-default, comptes de service sans jeton
-                 └─ web (React + nginx) ──► api (FastAPI), déployés par digest (chart Helm)
+                 ├─ Kyverno : n'admet que les images signées par la CI, de ghcr.io/tunsay, par digest
+                 └─ ArgoCD, sans droits de cluster : n'écrit que dans ssf
+                      │  lit k8s/chart + values-dev.yaml dans ce dépôt, annule toute modification manuelle
+                      ▼
+                    web (React + nginx) ──► api (FastAPI), par digest, admis par Kyverno
 
-  e2e (CI) ──► même cluster, construit de zéro sur un runner : preuves d'isolation et d'app
+  e2e (CI) ──► même cluster, construit de zéro sur un runner : isolation, application, dérive
 ```
 
-À venir : Kyverno (signature vérifiée à l'admission) et ArgoCD au jalon 5 ; Prometheus,
-Grafana et OWASP ZAP au jalon 6.
+À venir : Prometheus, Grafana et OWASP ZAP au jalon 6.
 
 ## Démo
 
 Prérequis : Windows + WSL2 (Ubuntu) + Docker Desktop, puis `make install-tools`.
 
 ```bash
-make infra-up            # cluster kind, plateforme et application par Terraform (plan affiché, confirmation)
+make infra-up            # cluster kind et plateforme par Terraform (plan affiché, confirmation), puis ArgoCD déploie l'app
 make app-proof           # l'app répond sur http://localhost:8081 — pods non-root, système de fichiers en lecture seule
 make isolation-proof     # cloisonnement réseau et identités (8 tests, même commande avant et après durcissement)
 make supply-chain-proof  # signature, SBOM, digest, qui peut signer, build figé
+make admission-proof     # 6 images soumises au cluster : seules celles signées par la CI, par digest, sont admises
+make drift-proof         # 5 modifications manuelles de l'app : celles que le dépôt décrit sont annulées par ArgoCD
 make attack-escape       # une évasion de conteneur, réussie hors durcissement, refusée dans le namespace durci
 make scan                # rejoue en local les contrôles de la CI
 ```
@@ -63,8 +68,10 @@ make scan                # rejoue en local les contrôles de la CI
 | Base d'image ou paquet Python substitué | images de base par digest, `pip --require-hashes` | build | ✅ jalon 4 |
 | Signature par un job compromis | permissions CI au moindre privilège | CI | ✅ jalon 4 |
 | Dérogation de sécurité oubliée | contrôle des dates d'expiration | CI | ✅ jalon 4 |
-| Image non signée déployée | Kyverno, vérification de signature | admission du cluster | ⏳ jalon 5 |
-| Dérive de configuration | ArgoCD (GitOps) | cluster | ⏳ jalon 5 |
+| Image non signée déployée, même conforme à PSS | Kyverno : signature et SBOM par l'identité exacte de la CI | admission du cluster | ✅ jalon 5 |
+| Image d'un autre registre, ou désignée par un tag | Kyverno : `ghcr.io/tunsay/` seul, digest obligatoire | admission du cluster | ✅ jalon 5 |
+| Modification manuelle du cluster (dérive) | ArgoCD, synchronisation automatique avec `selfHeal` | cluster | ✅ jalon 5 |
+| Outil de déploiement compromis | ArgoCD sans droits de cluster : écrit dans `ssf` seulement, aucun compte | cluster | ✅ jalon 5 |
 | Faille visible à l'exécution | OWASP ZAP baseline | CI | ⏳ jalon 6 |
 
 Chaque ligne cochée est prouvée par une commande ou un run de CI, documentés dans le
@@ -77,6 +84,12 @@ Chaque ligne cochée est prouvée par une commande ou un run de CI, documentés 
   workflow `e2e` ([ADR 0009](docs/adr/0009-preuve-reseau-en-ci-ephemere.md)).
 - **Le SBOM du front ne liste pas React** : Vite regroupe les bibliothèques JavaScript dans un seul
   fichier ; les dépendances npm restent contrôlées par `npm audit`, en amont.
+- **ArgoCD n'annule que ce que le dépôt décrit** : un champ ajouté à la main à un objet, ou un
+  objet étranger créé dans le namespace, restent (mesuré) ; ce sont les droits Kubernetes et
+  Kyverno qui limitent ce cas ([ADR 0014](docs/adr/0014-gitops-argocd-sans-droits-cluster.md)).
+- **Sur le poste, la réparation d'une dérive a pris ~90 s** au lieu de 9 à 27 s en CI : Kyverno
+  vérifie aussi les Deployments, et sa vérification de signature y est plus lente
+  ([chapitre 5](docs/rapport/05-jalon-5.md), incident 3).
 - Pas de fournisseur cloud : Terraform pilote un cluster local
   ([ADR 0004](docs/adr/0004-terraform-sans-fournisseur-cloud.md)).
 
@@ -91,12 +104,14 @@ Chaque ligne cochée est prouvée par une commande ou un run de CI, documentés 
 ```
 app/api/             FastAPI, 3 endpoints — image multi-stage non-root, dépendances à empreintes
 app/web/             React + TS — nginx non privilégié, CSP stricte
-infra/terraform/     cluster kind, puis plateforme : namespaces, Traefik, NetworkPolicies, application
-k8s/chart/           chart Helm de l'application (image par digest obligatoire)
-scripts/             preuves (sondes, supply-chain-proof), contrôle des dérogations, outillage WSL
+infra/terraform/     cluster kind, puis plateforme : namespaces, Traefik, NetworkPolicies, Kyverno, ArgoCD
+k8s/chart/           chart Helm de l'application (image par digest obligatoire), values-dev.yaml = version déployée
+k8s/policies/        politiques d'admission Kyverno (signature, registre, digest)
+k8s/argocd/          projet et Application ArgoCD (ce dépôt, namespace ssf, rien d'autre)
+scripts/             preuves (sondes, supply-chain, admission, dérive), contrôle des dérogations, outillage WSL
 security/            dérogations datées, démonstration d'attaque encadrée
 docs/                rapport par jalon, ADR, plan
-.github/workflows/   ci (contrôles, publication signée), e2e (cluster éphémère)
+.github/workflows/   ci (contrôles, publication signée), e2e (cluster éphémère : isolation, app, dérive)
 ```
 
 ## Modèle de menaces

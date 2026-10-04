@@ -21,7 +21,7 @@ fournisseur cloud (ADR 0004), coût zéro.
 | 2 | Terraform pilote le cluster | PSS restricted, GHCR OIDC, job IaC | **terminé** |
 | 3 | Déploiement + cloisonnement | Helm, Traefik, NetworkPolicies, RBAC, preuve e2e | **terminé** |
 | 4 | Chaîne d'approvisionnement | SBOM, signature Cosign, digests, empreintes, moindre privilège CI | **terminé** |
-| 5 | Policy as code + GitOps | Kyverno, ArgoCD | à faire |
+| 5 | Policy as code + GitOps | Kyverno (signature à l'admission), ArgoCD sans droits de cluster | **terminé** |
 | 6 | Observabilité + DAST + récit | Prometheus/Grafana, ZAP, menaces | à faire |
 
 ---
@@ -63,7 +63,8 @@ Découpé en deux livrables présentables séparément. Détail, preuves et dix 
 
 Réalisé : 3a et 3b complets. Écart au plan : les NetworkPolicies ne sont **pas** appliquées sur
 le poste (noyau WSL2 sans `NFT_QUEUE`, incident I8) ; elles sont prouvées sur un cluster éphémère
-en CI, workflow `e2e` (ADR 0009). Bonus (Sealed Secrets, kube-bench) reportés au jalon 5.
+en CI, workflow `e2e` (ADR 0009). Bonus (Sealed Secrets, kube-bench) reportés au jalon 5, puis
+abandonnés (voir jalon 5).
 
 Prérequis : paquets GHCR `ssf-api` et `ssf-web` publics — vérifié, c'était déjà le cas.
 
@@ -116,14 +117,32 @@ composants.
 
 ---
 
-## Jalon 5 — Policy as code et GitOps · À FAIRE — le plus différenciant
+## Jalon 5 — Policy as code et GitOps · TERMINÉ
 
-- **Kyverno** dans `security` : interdire le tag `latest`, exiger runAsNonRoot et des limites,
-  n'autoriser que le registre GHCR, et **vérifier la signature Cosign à l'admission**.
-- Preuve maîtresse : une image non signée poussée à la main est **rejetée par le cluster**, même
-  si elle est conforme à PSS. C'est l'argument d'entretien le plus fort du projet.
-- **ArgoCD** : dépôt de manifests séparé, synchronisation automatique, démonstration de reprise
-  de dérive (modification manuelle du cluster annulée automatiquement).
+Le cluster refuse lui-même ce qui ne vient pas de la chaîne, et revient seul à l'état décrit
+dans le dépôt. Détail, preuves et trois incidents : `05-jalon-5.md` ; notes brutes :
+`journal-jalon-5.md`.
+
+- **5a — Kyverno 1.19.1** dans `security`, politiques CEL (`ImageValidatingPolicy`,
+  `ValidatingPolicy`) en `Deny` sur `ssf` : signature **et** SBOM par l'identité exacte du
+  workflow `ci` sur `main`, registre `ghcr.io/tunsay/` seul, digest obligatoire. Preuve
+  (`make admission-proof`) : une image jamais signée, conforme à PSS, est refusée par le
+  cluster — la preuve maîtresse du plan. ADR 0012 et 0013.
+- **5b — Argo CD v3.5.3** : déploie l'application depuis ce dépôt (`k8s/chart` +
+  `values-dev.yaml`), synchronisation automatique, modifications manuelles annulées (`selfHeal`).
+  **Aucun droit de cluster** (par défaut : administrateur de tout le cluster), aucun compte.
+  Preuve (`make drift-proof`, et `make drift-check` en CI à chaque changement). ADR 0014.
+
+Écarts au plan, décidés par Tunsay :
+
+- **Pas de dépôt de manifests séparé** : ArgoCD lit ce dépôt. Le workflow e2e déploie
+  exactement le commit testé, et la CI n'a besoin d'aucun jeton d'écriture (ADR 0014).
+- **runAsNonRoot et limites non doublés dans Kyverno** : déjà imposés par PSS restricted et le
+  LimitRange depuis le jalon 2. Le LimitRange injecte les limites avant que Kyverno voie le pod :
+  une règle Kyverno « limites » ne pourrait jamais échouer dans `ssf`.
+- **Sealed Secrets et kube-bench abandonnés** : l'application n'a aucun secret à protéger
+  (zéro secret statique, OIDC partout) ; kube-bench s'exécute en pod privilégié (hostPID,
+  montages du nœud), à l'opposé de la posture du cluster.
 
 ---
 

@@ -30,11 +30,14 @@ GitHub Actions + GitLab CI en miroir, GHCR.
   Cosign sans clé par le seul job `images` (identité exacte `ci.yml@refs/heads/main`), déploiement
   par `tag@digest`, bases par digest, `requirements.txt` à empreintes, contrôle des dérogations.
   Sept incidents. Voir `docs/rapport/04-jalon-4.md`, ADR 0010 et 0011.
-- **Jalon 5 — en cours.** 5a (04/10, prouvé en local) : Kyverno 1.19.1 en `Deny` sur `ssf` —
-  signature + SBOM par l'identité exacte de la CI, registre `ghcr.io/tunsay/` seul, digest
-  obligatoire. Politiques CEL (`ImageValidatingPolicy`, `ValidatingPolicy`) car `ClusterPolicy`
-  est dépréciée. `ImageValidatingPolicy` lit bien les bundles cosign v3 sur GHCR (mesuré, J5-I1) :
-  double signature de l'ADR 0012 retirée (ADR 0013). Prochain : 5b, ArgoCD.
+- **Jalon 5 — terminé (04/10).** 5a : Kyverno 1.19.1 en `Deny` sur `ssf` — signature + SBOM
+  par l'identité exacte de la CI, registre `ghcr.io/tunsay/` seul, digest obligatoire ; politiques
+  CEL (`ClusterPolicy` est dépréciée) ; signature cosign v3 seule (ADR 0012, 0013). 5b : Argo CD
+  v3.5.3 déploie l'app depuis ce dépôt (`k8s/chart` + `values-dev.yaml`), `selfHeal`, **sans droits
+  de cluster** ni compte (ADR 0014) ; Terraform ne déploie plus l'app. Trois incidents. Voir
+  `docs/rapport/05-jalon-5.md`. Écarts au plan : pas de dépôt séparé, runAsNonRoot/limites laissés
+  à PSS, Sealed Secrets et kube-bench abandonnés.
+- **Jalon 6 — prochain.** Prometheus/Grafana, ZAP, modèle de menaces, README final, PDF.
 - **En attente** : trier les PR Dependabot ouvertes (#9 à #17) selon la politique du dépôt.
 
 Les paquets GHCR `ssf-api` et `ssf-web` sont publics (vérifié le 28/09 : tirage anonyme OK).
@@ -42,7 +45,7 @@ Ingress : Traefik par NodePort, pas ingress-nginx (retiré en mars 2026) — ADR
 3b (03/10) : NetworkPolicies + comptes sans jeton + Traefik namespacé (ADR 0008). **Le noyau
 WSL2 n'a pas NFT_QUEUE : kindnet n'applique pas les NetworkPolicies en local** (incident I8) ;
 preuve réseau sur cluster éphémère en CI, workflow `e2e` (ADR 0009).
-Journal des incidents du jalon en cours : `docs/rapport/journal-jalon-5.md`.
+Dernier journal d'incidents : `docs/rapport/journal-jalon-5.md` (le jalon 6 aura le sien).
 
 Le plan directeur complet des 6 jalons est dans `docs/rapport/plan.md`. Jalons 4-6 : SBOM +
 signature Cosign keyless + digests (scan IaC déjà là) ; Kyverno + ArgoCD ; observabilité
@@ -54,17 +57,20 @@ Prometheus/Grafana + DAST ZAP + modèle de menaces.
 make help          # liste toutes les cibles
 make up / down     # l'app en conteneurs compose (jalon 1) — plus utilisée à partir du jalon 3
 make scan          # rejoue toute la CI en local (lint, SAST, SCA, Trivy, gitleaks, semgrep)
-make infra-up      # crée le cluster kind puis applique la couche platform (jalon 2)
+make infra-up      # cluster kind + couche platform (Terraform), puis attend qu'ArgoCD ait déployé l'app
 make infra-down    # détruit platform puis le cluster
 make infra-lint    # fmt, validate, checkov, trivy config
 make infra-proof   # preuve : pod root refusé par PSS dans le namespace ssf
 make attack-escape # démo avant/après : évasion hostPath réussie dans default, bloquée dans ssf
-make chart-lint    # helm lint + rendu + trivy du chart k8s/chart (inclus dans infra-lint)
+make chart-lint    # helm lint + rendu des 3 charts (app avec values-dev.yaml, policies, argocd) + trivy
 make app-proof     # preuve 3a : app servie par Traefik sur 127.0.0.1:8081, pods non-root, lecture seule
 make isolation-proof # preuve 3b : 8 tests réseau + identité, OUVERT/BLOQUÉ (même commande avant/après)
 make isolation-check # idem + verdict strict ; échoue en local sur les tests réseau (WSL2, incident I8)
 make supply-chain-proof # preuve jalon 4 : signature, SBOM, digest, qui peut signer, build figé
 make admission-proof # preuve 5a : 6 images soumises au cluster en dry-run serveur, ADMISE/REFUSÉE
+make drift-proof   # preuve 5b : 5 dérives manuelles, ANNULÉE/PERSISTANTE, + droits d'ArgoCD
+make drift-check   # idem + verdict strict (CI e2e)
+make app-wait      # attend Synced/Healthy d'ArgoCD et les pods prêts (appelé par infra-up)
 ```
 
 Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make infra-up`.
@@ -104,6 +110,10 @@ Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make inf
   GHCR/Rekor, aucun pod ne se crée dans `ssf` (voulu : « pas pu contrôler » vaut « refusé »).
   Déployer une image = reporter tag ET digests du résumé du job `images` dans
   `k8s/chart/values-dev.yaml`, commiter, pousser : ArgoCD applique (jalon 5b).
+- **ArgoCD lit GitHub, pas le poste** : il déploie `main` tel que poussé (relecture toutes les
+  2 à 3 min). Un changement de `k8s/` non poussé n'est pas déployé. Interface (lecture seule,
+  sans compte) : `kubectl -n argocd port-forward svc/argocd-server 8090:443`, puis
+  https://127.0.0.1:8090.
 - **Constater une recréation de pods** : `kubectl wait --for=condition=Ready pod -l ...`, jamais
   `kubectl rollout status` (il répond « terminé » si le Deployment n'a pas changé ; J5-I2).
 

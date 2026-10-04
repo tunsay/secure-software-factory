@@ -298,6 +298,74 @@ Helm, pas les objets réels. L'application est en panne (front à zéro, API inj
 configurée autrement que le dépôt (`APP_ENV=prod`), et le seul outil de déploiement affirme que
 tout est conforme. Seul un humain qui regarde s'en apercevrait.
 
+## APRÈS 5b — `make drift-check` en CI (04/10, commit `1422aae`, cluster neuf)
+
+Bascule locale d'abord : `make infra-up` → `10 added, 1 changed, 1 destroyed` (le seul
+`destroy` : `helm_release.app` ; le seul `change` : Traefik qui publie `127.0.0.1`), puis
+`ArgoCD, application ssf : OutOfSync/Healthy → Synced/Progressing → Synced/Healthy`, pods prêts,
+`make app-proof` vert, `make admission-proof` inchangé (tests 1 et 6 admis, 2 à 5 refusés).
+
+La preuve de référence est celle du workflow e2e, sur un cluster construit de zéro où ArgoCD
+déploie le commit testé :
+
+```
+== Application gérée par ArgoCD (synchronisation automatique depuis le dépôt)
+
+== État de départ
+   APP_ENV de l'API = 'dev' ; variable DRIFT = '' ; front : 2 répliques
+   service api : présent ; ConfigMap intrus : absente
+
+== Dérives manuelles
+   1. APP_ENV de l'API passé de dev à prod                (décrit dans le dépôt)
+   4. variable DRIFT ajoutée à l'API                       (non décrite)
+   2. front réduit à 0 réplique                            (décrit dans le dépôt)
+   3. service de l'API supprimé                            (décrit dans le dépôt)
+   5. ConfigMap « intrus » créée dans le namespace         (non décrite)
+
+== Observation pendant 60 s
+ANNULÉE      après ~21 s — 1. APP_ENV de l'API modifié
+ANNULÉE      après ~9 s — 2. front à 0 réplique
+ANNULÉE      après ~27 s — 3. service de l'API supprimé
+PERSISTANTE  après 60 s — 4. variable DRIFT ajoutée
+PERSISTANTE  après 60 s — 5. ConfigMap intrus
+
+== État final
+   APP_ENV de l'API = 'dev' ; variable DRIFT = 'manuel' ; front : 2 répliques
+   service api : présent ; ConfigMap intrus : présente
+   (nettoyé : variable DRIFT et ConfigMap intrus)
+
+== Ce que le contrôleur d'ArgoCD a le droit de faire
+   modifier les Deployments de ssf                      : yes
+   lire les Secrets de ssf                              : no
+   supprimer les NetworkPolicies de ssf                 : no
+   se donner des droits dans ssf (RoleBinding)          : no
+   créer un Deployment dans kube-system                : no
+   se donner des droits sur le cluster                  : no
+
+DÉRIVE CONFORME : dérives décrites annulées, droits d'ArgoCD bornés à ssf
+```
+
+| Modification manuelle | Avant (Terraform) | Après (ArgoCD) |
+|---|---|---|
+| 1. `APP_ENV` passé de `dev` à `prod` | persistante | **annulée en ~21 s** |
+| 2. front à 0 réplique (application en panne) | persistante | **annulée en ~9 s** |
+| 3. Service de l'API supprimé (API injoignable) | persistante | **annulée en ~27 s** |
+| 4. variable ajoutée, que le dépôt ne décrit pas | persistante | persistante |
+| 5. objet étranger créé dans `ssf` | persistante | persistante |
+| L'outil de déploiement voit-il la dérive ? | **non** (`terraform plan` : no differences) | **oui**, et la répare |
+
+Lecture :
+- **Ce que le dépôt décrit revient seul**, en moins de 30 s, sans intervention.
+- **Ce qu'il ne décrit pas reste** — limite réelle, mesurée. ArgoCD compare avec ce qu'il a
+  lui-même appliqué : un champ qu'il n'a jamais posé n'est pas, pour lui, une dérive. Et un objet
+  qu'il n'a pas créé ne le concerne pas : ses droits ne lui permettent même pas de lire les
+  ConfigMaps de `ssf`. Ce cas relève des autres verrous : qui peut écrire dans `ssf` (droits
+  Kubernetes), et ce qui peut y tourner (Kyverno).
+- **Ses droits sont bornés** : écrire des Deployments dans `ssf`, oui ; lire un secret, toucher
+  au réseau, se donner des droits, sortir de `ssf`, non.
+- Sur le poste, la même preuve a donné une réparation en ~90 s au lieu de quelques secondes :
+  incident J5-I3.
+
 ## Incidents
 
 ### J5-I1 — La prémisse de l'ADR 0012 était fausse : la mesure la dément
@@ -348,3 +416,41 @@ tout est conforme. Seul un humain qui regarde s'en apercevrait.
 - **Leçon** : une commande d'attente doit attendre l'état qu'on veut constater, pas un état
   voisin. Une vérification qui répond trop vite est plus trompeuse qu'une absence de
   vérification.
+
+### J5-I3 — En local, ArgoCD répare en ~90 s au lieu de quelques secondes : Kyverno vérifie aussi les Deployments
+
+- **Symptôme** : `make drift-proof` après la bascule vers ArgoCD, sur le poste : les cinq dérives
+  `PERSISTANTE après 60 s`, l'application injoignable sur 8081. Puis le nettoyage du script
+  (`kubectl set env deploy/api DRIFT-`) échoue : `Timeout: request did not complete within
+  requested timeout - context deadline exceeded`. Quelques minutes plus tard, l'application
+  fonctionne de nouveau.
+- **Diagnostic, en lecture seule** (21:22 CEST, soit 19:22Z) :
+  - application `Synced/Healthy`, dernière opération `Succeeded — successfully synced (all tasks
+    run)` ; Service `api` recréé à 19:15:00Z (âge 7 min 27 s) ;
+  - journal du contrôleur ArgoCD : `Skipping auto-sync: another operation is in progress`
+    (19:14:47Z), puis `already attempted sync to [1422aae…] … retrying in 961ms` (19:14:59Z), puis
+    une nouvelle opération d'auto-réparation sur le Service `api` et le Deployment `web`,
+    `SelfHealAttemptsCount: 2` (19:15:00Z), et `application status is Synced` dès 19:15:15Z ;
+  - journal de Kyverno : le webhook `ivpol/validate/ssf-signature-ci` reçoit des **mises à jour
+    du Deployment `api`** — d'ArgoCD à 19:14:29Z (`?timeout=10s`), puis du nettoyage à 19:15:37Z
+    (`?timeout=6s`) — et répond après l'abandon de l'API Kubernetes : `write: broken pipe` ;
+  - nœuds : control-plane 18,6 % CPU et 1,46 Go / 7,45 Go, workers sous 5 % CPU : **pas de
+    saturation**.
+- **Cause** : la politique de signature, écrite pour les pods, est **aussi appliquée aux
+  Deployments** — Kyverno génère les règles équivalentes pour les contrôleurs de pods, ce que son
+  journal montre. Chaque modification d'un Deployment déclenche donc une vérification de
+  signature (GHCR, Rekor) **dans** la requête d'admission. Sur le poste, elle a dépassé le temps
+  accordé au webhook ; avec `failurePolicy: Fail`, la mise à jour est refusée. La première
+  réparation d'ArgoCD a échoué sur le Deployment `api`, la nouvelle tentative a réussi :
+  application rétablie **environ 90 s** après la dérive, au-delà de la fenêtre de 60 s.
+- **En CI, sur le cluster neuf** : `make drift-check` passe — dérives décrites annulées en moins
+  de 60 s, workflow e2e vert. Même politique, même Kyverno ; la vérification y est plus rapide.
+  La cause exacte de la lenteur locale (réseau du poste vers GHCR et Rekor, cache de Kyverno)
+  n'est **pas mesurée**.
+- **Correction** : aucune à ce stade, choix documenté. Restreindre la politique aux pods
+  sortirait Kyverno du chemin des Deployments (les pods restent vérifiés à leur création), au
+  prix d'un refus plus tardif d'un Deployment non signé. Point ouvert.
+- **Leçon** : une politique d'admission est sur le chemin critique de **tout** ce qui la
+  traverse, y compris de l'outil qui répare. Avec `failurePolicy: Fail`, une lenteur devient un
+  refus. Et deux résultats différents, CI et poste, sont tous les deux vrais : on documente les
+  deux.
