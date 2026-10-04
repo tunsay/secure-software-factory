@@ -30,7 +30,7 @@ CHART_WEB  := $(shell sed -n 's/^ *web *= *"\(sha256:[0-9a-f]*\)".*/\1/p' $(TF_P
 CHART_SET  := image.tag=$(CHART_TAG),image.digests.api=$(CHART_API),image.digests.web=$(CHART_WEB)
 
 .PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools \
-        infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof isolation-proof isolation-check supply-chain-proof
+        infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof isolation-proof isolation-check supply-chain-proof admission-proof
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -173,6 +173,9 @@ isolation-proof: ## Preuve 3b : flux réseau et identités — même commande av
 
 supply-chain-proof: ## Preuve jalon 4 : signature, SBOM, digests — même commande avant et après
 	@bash scripts/supply-chain-proof.sh
+
+admission-proof: ## Preuve jalon 5a : quelles images le cluster admet (dry-run serveur, rien n'est créé)
+	@bash scripts/admission-proof.sh
 
 # Verdicts attendus après durcissement, dans l'ordre des tests de isolation-proof.
 ISOLATION_EXPECTED := BLOQUÉ BLOQUÉ BLOQUÉ OUVERT OUVERT BLOQUÉ BLOQUÉ no no

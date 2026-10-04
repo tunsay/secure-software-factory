@@ -259,8 +259,15 @@ jobs:
           SVC: ${{ matrix.svc }}
         run: |
           set -euo pipefail
+          # Format cosign v3 (bundle Sigstore, artefact OCI rattaché à l'image).
           cosign sign --yes "$REF"
           cosign attest --yes --type cyclonedx --predicate "sbom-$SVC.cdx.json" "$REF"
+          # Ancien format, en plus, TRANSITOIRE (ADR 0012) : Kyverno 1.19.1 ne lit pas encore les
+          # bundles v3 rangés sur GHCR (PR kyverno#16754). À retirer dès qu'une version publiée
+          # le fait. --use-signing-config=false : exigé par cosign avec l'ancien format.
+          cosign sign --yes --new-bundle-format=false --use-signing-config=false "$REF"
+          cosign attest --yes --new-bundle-format=false --use-signing-config=false \
+            --type cyclonedx --predicate "sbom-$SVC.cdx.json" "$REF"
 
       # Même règle que la preuve locale (make supply-chain-proof) et que Kyverno au jalon 5 :
       # signée par CE workflow, sur main, et par aucune autre identité.
@@ -274,12 +281,16 @@ jobs:
           ISSUER: https://token.actions.githubusercontent.com
         run: |
           set -euo pipefail
-          cosign verify --certificate-identity "$SIGNER" --certificate-oidc-issuer "$ISSUER" "$REF" > /dev/null
-          cosign verify-attestation --type cyclonedx --certificate-identity "$SIGNER" \
-            --certificate-oidc-issuer "$ISSUER" "$REF" > /dev/null
+          # Les deux formats, avec la même identité exacte : chacun doit tenir seul.
+          for fmt in true false; do
+            cosign verify --new-bundle-format="$fmt" --certificate-identity "$SIGNER" \
+              --certificate-oidc-issuer "$ISSUER" "$REF" > /dev/null
+            cosign verify-attestation --new-bundle-format="$fmt" --type cyclonedx \
+              --certificate-identity "$SIGNER" --certificate-oidc-issuer "$ISSUER" "$REF" > /dev/null
+          done
           # Référence à reporter dans infra/terraform/platform/dev.tfvars pour la déployer.
           {
-            echo "### ssf-$SVC : publiée, signée, SBOM attesté"
+            echo "### ssf-$SVC : publiée, signée (formats v3 et ancien), SBOM attesté"
             echo '```'
             echo "$DEPLOY"
             echo '```'
