@@ -34,6 +34,15 @@ def test_validation_rejects_bad_payload() -> None:
     assert r.status_code == 422
 
 
+def test_validation_error_does_not_reflect_input() -> None:
+    # Jalon 6a : l'erreur dit quel champ est invalide et pourquoi, jamais ce qui a été envoyé.
+    payload = "<script>alert(1)</script>"
+    r = client.post("/items", json={"name": "x", "quantity": payload})
+    assert r.status_code == 422
+    assert payload not in r.text
+    assert r.json()["detail"][0]["loc"] == ["body", "quantity"]
+
+
 def test_metrics_exposed() -> None:
     r = client.get("/metrics")
     assert r.status_code == 200

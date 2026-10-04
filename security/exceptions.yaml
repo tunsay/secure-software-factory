@@ -33,6 +33,24 @@ exceptions:
     owner: tunsay
     expires: 2027-03-31
 
+  - id: "10049"
+    tool: zap
+    path: security/zap-rules.tsv
+    reason: >-
+      Storable and Cacheable Content : le front est un contenu public et statique, sans donnée
+      personnelle ; sa mise en cache est voulue (fichiers JS et CSS nommés par empreinte).
+    owner: tunsay
+    expires: 2027-03-31
+
+  - id: "10109"
+    tool: zap
+    path: security/zap-rules.tsv
+    reason: >-
+      Modern Web Application : information de ZAP, pas une vulnérabilité. L'application n'a
+      qu'une page ; ses appels d'API sont vérifiés à part par make dast.
+    owner: tunsay
+    expires: 2027-03-31
+
 # Exemple de format :
 # - id: CVE-2025-00000
 #   tool: trivy

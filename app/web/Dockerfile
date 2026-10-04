@@ -23,6 +23,7 @@ RUN apk upgrade --no-cache
 USER 101
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=builder /build/dist /usr/share/nginx/html
 
 # nginx-unprivileged tourne en UID 101 sur le port 8080.

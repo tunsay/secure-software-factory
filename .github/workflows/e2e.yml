@@ -9,9 +9,9 @@ name: e2e
 on:
   push:
     branches: [main]
-    paths: ["infra/**", "k8s/**", "scripts/k8s-probe.py", "scripts/app-wait.sh", "scripts/drift-proof.sh", "Makefile", ".github/workflows/e2e.yml"]
+    paths: ["infra/**", "k8s/**", "scripts/k8s-probe.py", "scripts/app-wait.sh", "scripts/drift-proof.sh", "scripts/dast.sh", "security/zap-rules.tsv", "Makefile", ".github/workflows/e2e.yml"]
   pull_request:
-    paths: ["infra/**", "k8s/**", "scripts/k8s-probe.py", "scripts/app-wait.sh", "scripts/drift-proof.sh", "Makefile", ".github/workflows/e2e.yml"]
+    paths: ["infra/**", "k8s/**", "scripts/k8s-probe.py", "scripts/app-wait.sh", "scripts/drift-proof.sh", "scripts/dast.sh", "security/zap-rules.tsv", "Makefile", ".github/workflows/e2e.yml"]
   workflow_dispatch:
   # Chaque lundi, sans commit : détecte une dérive extérieure (image tirée, chart, provider).
   schedule:

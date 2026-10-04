@@ -28,7 +28,7 @@ CHART_VALUES := $(CHART)/values-dev.yaml
 
 .PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools \
         infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof isolation-proof isolation-check supply-chain-proof admission-proof drift-proof \
-        drift-check app-wait
+        drift-check app-wait dast dast-check
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -237,3 +237,13 @@ infra-proof: ## Preuve PSS : un pod root doit être refusé à l'admission dans 
 	-$(KUBECTL) -n ssf run pss-probe --image=busybox:1.37 --restart=Never --command -- sleep 5
 	@echo; echo "== Quota et limites du namespace :"
 	$(KUBECTL) -n ssf describe quota quota | sed -n '1,12p'
+
+# ---------------------------------------------------------------------------
+# DAST (jalon 6a) : l'application vue de l'extérieur, telle qu'un attaquant la voit.
+# ---------------------------------------------------------------------------
+
+dast: ## DAST : scan ZAP « baseline » (passif) + 4 expositions ciblées — même commande avant et après
+	@bash scripts/dast.sh
+
+dast-check: ## dast + verdict : échoue sur un avertissement ZAP ou une exposition (CI e2e)
+	@DAST_STRICT=1 bash scripts/dast.sh

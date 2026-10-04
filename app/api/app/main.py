@@ -9,8 +9,10 @@ from __future__ import annotations
 import os
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Response, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
@@ -28,12 +30,31 @@ class Item(ItemIn):
     id: UUID
 
 
+# /docs et /openapi.json ne sont jamais servis au public : nginx les refuse en bordure (jalon 6a).
+# En prod, ils n'existent pas du tout : la carte de l'API n'est pas offerte.
 app = FastAPI(
     title="Secure Software Factory — API",
     version=APP_VERSION,
     docs_url="/docs" if APP_ENV != "prod" else None,
+    openapi_url="/openapi.json" if APP_ENV != "prod" else None,
     redoc_url=None,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Erreur 422 sans la valeur reçue : ne jamais renvoyer au client ce qu'il a envoyé.
+
+    Par défaut, FastAPI recopie l'entrée invalide dans la réponse (champ « input ») : une
+    réflexion d'entrée, trouvée par make dast au jalon 6a. On garde le champ en cause et la
+    raison, pas la valeur.
+    """
+    detail = [
+        {"type": err["type"], "loc": list(err["loc"]), "msg": err["msg"]} for err in exc.errors()
+    ]
+    # 422 en clair : le nom de la constante a changé entre versions de Starlette.
+    return JSONResponse(status_code=422, content={"detail": detail})
+
 
 if CORS_ORIGINS:
     app.add_middleware(

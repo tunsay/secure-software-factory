@@ -32,6 +32,7 @@ kubeconfig*
 .env.*
 !.env.example
 trivy-results.*
+zap-report.*
 *.sarif
 
 # OS / IDE
