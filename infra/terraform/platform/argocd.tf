@@ -99,6 +99,11 @@ resource "helm_release" "argocd" {
     applicationSet = { replicas = 0 }
 
     controller = {
+      # Métriques Prometheus (jalon 6b) : argocd_app_info, état de synchronisation et santé.
+      metrics = {
+        enabled        = true
+        serviceMonitor = { enabled = true }
+      }
       resources = {
         requests = { cpu = "100m", memory = "256Mi" }
         limits   = { cpu = "1", memory = "768Mi" }
@@ -123,6 +128,9 @@ resource "helm_release" "argocd" {
       }
     }
   })]
+
+  # La sonde est un objet ServiceMonitor : ses CRD viennent de kube-prometheus-stack.
+  depends_on = [helm_release.prometheus_stack]
 }
 
 # Droits du contrôleur dans ssf, portés par la plateforme (ADR 0008) et visibles au plan :

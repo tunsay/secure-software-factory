@@ -1,0 +1,5 @@
+apiVersion: v2
+name: ssf-monitoring
+description: Sondes, règles d'alerte et tableau de bord de la posture de sécurité — jalon 6b, ADR 0015.
+type: application
+version: 0.1.0

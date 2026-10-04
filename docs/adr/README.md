@@ -19,3 +19,4 @@ est remplacée par un nouvel ADR qui la référence.
 | [0012](0012-kyverno-et-double-signature.md) | Admission par Kyverno (politiques CEL), double signature transitoire | accepté ; volet double signature remplacé par 0013 |
 | [0013](0013-signature-v3-seule.md) | Signature au seul format cosign v3 : la double signature est retirée | accepté |
 | [0014](0014-gitops-argocd-sans-droits-cluster.md) | GitOps : ArgoCD déploie l'application depuis ce dépôt, sans droits sur le cluster | accepté |
+| [0015](0015-observabilite-droits-restreints.md) | Observabilité de la posture de sécurité, sans composant trop privilégié | accepté |

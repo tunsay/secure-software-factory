@@ -126,7 +126,7 @@ infra-down: ## Détruit platform puis le cluster (demande confirmation)
 	-cd $(TF_PLATFORM) && terraform destroy -input=false -var-file=dev.tfvars $(TF_PLATFORM_VARS)
 	cd $(TF_CLUSTER) && terraform destroy -input=false
 
-chart-lint: ## Lint et rendu des charts Helm (application, politiques, ArgoCD), scan trivy des manifests rendus
+chart-lint: ## Lint et rendu des charts Helm (application, politiques, ArgoCD, monitoring), scan trivy des manifests rendus
 	helm lint $(CHART) --strict -f $(CHART_VALUES)
 	helm template ssf $(CHART) -f $(CHART_VALUES) > /dev/null
 	trivy config --exit-code 1 --severity HIGH,CRITICAL --helm-values $(CHART_VALUES) $(CHART)
@@ -134,6 +134,8 @@ chart-lint: ## Lint et rendu des charts Helm (application, politiques, ArgoCD), 
 	helm template ssf-policies k8s/policies > /dev/null
 	helm lint k8s/argocd --strict
 	helm template ssf-argocd k8s/argocd > /dev/null
+	helm lint k8s/monitoring --strict
+	helm template ssf-monitoring k8s/monitoring > /dev/null
 
 app-wait: ## Attend qu'ArgoCD ait synchronisé l'app (Synced, Healthy) et que ses pods soient prêts ; REVISION=<sha> : ce commit-là
 	@APP_REVISION=$(REVISION) bash scripts/app-wait.sh

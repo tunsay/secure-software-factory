@@ -30,8 +30,8 @@ module "ns_ingress" {
   }
 }
 
-# Namespace des outils de sécurité (Kyverno). Quota plus large : ce sont
-# des contrôleurs, pas des workloads applicatifs.
+# Namespace des outils de sécurité : Kyverno, trivy-operator et ses Jobs de scan (jalon 6b).
+# Quota plus large : ce sont des contrôleurs, pas des workloads applicatifs.
 module "ns_security" {
   source = "../modules/namespace"
 
@@ -39,10 +39,10 @@ module "ns_security" {
   pod_security_level = "restricted"
 
   quota = {
-    requests_cpu    = "1"
-    requests_memory = "1Gi"
-    limits_cpu      = "2"
-    limits_memory   = "3Gi"
+    requests_cpu    = "1500m"
+    requests_memory = "2Gi"
+    limits_cpu      = "4"
+    limits_memory   = "4Gi"
     pods            = 30
   }
 

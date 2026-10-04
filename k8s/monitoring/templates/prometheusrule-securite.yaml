@@ -1,0 +1,76 @@
+# Règles d'alerte de sécurité. Étiquette famille=securite : c'est elle que filtrent le tableau
+# de bord et make posture-proof. Pas d'Alertmanager (personne à prévenir sur un cluster de
+# développement) : les alertes sont calculées par Prometheus et affichées par Grafana.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ssf-securite
+  namespace: {{ .Release.Namespace }}
+spec:
+  groups:
+    - name: ssf-securite
+      rules:
+        # Deux branches : increase() pour un compteur déjà connu ; « unless … offset » pour un
+        # compteur qui vient d'apparaître (premier refus), dont increase() ne voit rien.
+        - alert: SsfRefusAdmission
+          expr: >-
+            sum(increase(kyverno_admission_requests_total{request_allowed="false"}[10m])) > 0
+            or
+            sum(kyverno_admission_requests_total{request_allowed="false"}
+              unless kyverno_admission_requests_total{request_allowed="false"} offset 10m) > 0
+          labels:
+            famille: securite
+            severity: warning
+          annotations:
+            summary: Kyverno a refusé une ressource à l'admission dans les 10 dernières minutes
+            description: >-
+              Image non signée par la CI, d'un autre registre, ou désignée par un tag : une
+              tentative de contournement, ou une erreur de déploiement à comprendre.
+
+        - alert: SsfApplicationDesynchronisee
+          expr: argocd_app_info{name="ssf", sync_status!="Synced"} == 1
+          for: 5m
+          labels:
+            famille: securite
+            severity: warning
+          annotations:
+            summary: L'application ssf diffère du dépôt depuis 5 minutes
+            description: >-
+              ArgoCD n'arrive pas à remettre l'état du dépôt : dérive qui résiste à
+              l'auto-réparation, ou synchronisation refusée (Kyverno, droits).
+
+        - alert: SsfApplicationNonSaine
+          expr: argocd_app_info{name="ssf", health_status!="Healthy"} == 1
+          for: 5m
+          labels:
+            famille: securite
+            severity: warning
+          annotations:
+            summary: L'application ssf n'est pas saine depuis 5 minutes
+
+        - alert: SsfVulnerabiliteCritique
+          expr: sum(trivy_image_vulnerabilities{namespace={{ .Values.appNamespace | quote }}, severity="Critical"}) > 0
+          labels:
+            famille: securite
+            severity: critical
+          annotations:
+            summary: Une image qui tourne dans ssf contient une vulnérabilité critique
+            description: >-
+              Publiée après le scan de la CI, ou tolérée par erreur : à corriger par une
+              nouvelle image (reconstruction, mise à jour de la base).
+
+        - alert: SsfRedemarrages
+          expr: sum(increase(kube_pod_container_status_restarts_total{namespace={{ .Values.appNamespace | quote }}}[15m])) > 3
+          labels:
+            famille: securite
+            severity: warning
+          annotations:
+            summary: Des conteneurs de ssf redémarrent en boucle
+
+        - alert: SsfErreursServeur
+          expr: sum(increase(traefik_entrypoint_requests_total{entrypoint="web", code=~"5.."}[5m])) > 5
+          labels:
+            famille: securite
+            severity: warning
+          annotations:
+            summary: L'application renvoie des erreurs 5xx au public

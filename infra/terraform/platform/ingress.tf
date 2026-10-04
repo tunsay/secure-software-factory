@@ -74,9 +74,21 @@ resource "helm_release" "traefik" {
     # chart refuse toute clé inconnue, l'erreur apparaît dès le plan.
     accessLog = { enabled = true }
 
+    # Métriques Prometheus (jalon 6b) : un Service interne dédié, et sa sonde. Les réponses
+    # servies au public, par code, alimentent le tableau de bord de posture.
+    metrics = {
+      prometheus = {
+        service        = { enabled = true }
+        serviceMonitor = { enabled = true }
+      }
+    }
+
     resources = {
       requests = { cpu = "50m", memory = "64Mi" }
       limits   = { cpu = "500m", memory = "256Mi" }
     }
   })]
+
+  # La sonde est un objet ServiceMonitor : ses CRD viennent de kube-prometheus-stack.
+  depends_on = [helm_release.prometheus_stack]
 }

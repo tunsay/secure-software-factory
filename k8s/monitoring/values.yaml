@@ -1,0 +1,9 @@
+# Sondes, règles d'alerte et tableau de bord de la posture de sécurité. Valeurs fournies par
+# Terraform (infra/terraform/platform/monitoring.tf).
+
+# Empreinte des fichiers du chart, calculée par Terraform : fait apparaître au plan toute
+# modification du chart local. Aucun template ne la lit.
+monitoringChecksum: ""
+
+# Namespace de l'application surveillée.
+appNamespace: ssf

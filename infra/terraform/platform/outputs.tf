@@ -1,10 +1,11 @@
 output "namespaces" {
   description = "Namespaces gérés par Terraform."
   value = {
-    app      = module.ns_app.name
-    ingress  = module.ns_ingress.name
-    security = module.ns_security.name
-    argocd   = module.ns_argocd.name
+    app        = module.ns_app.name
+    ingress    = module.ns_ingress.name
+    security   = module.ns_security.name
+    argocd     = module.ns_argocd.name
+    monitoring = module.ns_monitoring.name
   }
 }
 

@@ -29,11 +29,18 @@ resource "helm_release" "kyverno" {
   # Le chart est conforme à PSS restricted par défaut (non-root, capacités retirées, seccomp,
   # lecture seule), y compris ses jobs d'installation : aucune exception.
   values = [yamlencode({
-    admissionController  = { replicas = 1 }
+    # Sonde Prometheus (jalon 6b) : kyverno_admission_requests_total, refus compris.
+    admissionController = {
+      replicas       = 1
+      serviceMonitor = { enabled = true }
+    }
     backgroundController = { replicas = 1 }
     cleanupController    = { replicas = 1 }
     reportsController    = { replicas = 1 }
   })]
+
+  # La sonde est un objet ServiceMonitor : ses CRD viennent de kube-prometheus-stack.
+  depends_on = [helm_release.prometheus_stack]
 }
 
 resource "helm_release" "admission_policies" {

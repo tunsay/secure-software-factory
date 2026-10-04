@@ -1,0 +1,20 @@
+# Métriques internes de l'API, lues DANS le cluster : depuis le jalon 6a, nginx refuse
+# /api/metrics au public ; la NetworkPolicy api-from-monitoring (Terraform) n'ouvre le port 8000
+# qu'à Prometheus.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ssf-api
+  namespace: {{ .Release.Namespace }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.appNamespace | quote }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ssf
+      app.kubernetes.io/component: api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

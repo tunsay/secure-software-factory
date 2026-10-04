@@ -54,6 +54,8 @@ chart:
     - helm template ssf-policies k8s/policies > /dev/null
     - helm lint k8s/argocd --strict
     - helm template ssf-argocd k8s/argocd > /dev/null
+    - helm lint k8s/monitoring --strict
+    - helm template ssf-monitoring k8s/monitoring > /dev/null
 
 checkov:
   stage: sast

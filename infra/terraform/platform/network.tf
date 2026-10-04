@@ -1,7 +1,8 @@
 # Cloisonnement réseau du namespace applicatif (jalon 3b, ADR 0008).
 #
 # Principe : tout est fermé, puis chaque flux légitime est ouvert un par un, en entrée ET en
-# sortie. Il y en a trois : Traefik -> web, web -> api, et la résolution DNS.
+# sortie. Il y en a trois : Traefik -> web, web -> api, et la résolution DNS ; plus, au jalon 6b,
+# Prometheus -> api pour les métriques.
 #
 #   Internet / poste ──► Traefik (ns ingress) ──► web ──► api
 #                                                  │       │
@@ -144,6 +145,39 @@ resource "kubernetes_network_policy_v1" "api_from_web" {
       from {
         pod_selector {
           match_labels = local.web_pods
+        }
+      }
+      ports {
+        port     = "8000"
+        protocol = "TCP"
+      }
+    }
+  }
+}
+
+# 6. Prometheus (namespace monitoring) lit les métriques de l'API, port 8000, chemin /metrics
+#    (jalon 6b). Flux ajouté par la plateforme, pas par le chart : depuis le jalon 6a, nginx
+#    refuse /api/metrics au public ; seules les sondes du cluster y accèdent, et seulement
+#    Prometheus. Pas de règle de sortie à ajouter : c'est Prometheus qui se connecte.
+resource "kubernetes_network_policy_v1" "api_from_monitoring" {
+  metadata {
+    name      = "api-from-monitoring"
+    namespace = local.app_ns
+  }
+
+  spec {
+    pod_selector {
+      match_labels = local.api_pods
+    }
+    policy_types = ["Ingress"]
+
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = { "kubernetes.io/metadata.name" = module.ns_monitoring.name }
+        }
+        pod_selector {
+          match_labels = { "app.kubernetes.io/name" = "prometheus" }
         }
       }
       ports {

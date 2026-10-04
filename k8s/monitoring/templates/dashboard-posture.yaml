@@ -1,0 +1,12 @@
+# Tableau de bord « posture sécurité », versionné dans le dépôt. Le sidecar de Grafana charge
+# les ConfigMaps de son namespace portant l'étiquette grafana_dashboard=1.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ssf-dashboard-posture
+  namespace: {{ .Release.Namespace }}
+  labels:
+    grafana_dashboard: "1"
+data:
+  ssf-posture.json: |-
+{{ .Files.Get "dashboards/posture.json" | indent 4 }}

@@ -152,6 +152,50 @@ FERMÉ    erreur de validation : l'entrée n'est pas renvoyée
   le code du front est identique, seule la configuration nginx a changé. Le défaut n'était pas
   dans le code de l'application mais dans la façon de la servir.
 
+## AVANT 6b — `make posture-proof` (04/10)
+
+Sept questions qu'un responsable sécurité se pose chaque matin, posées à Prometheus par l'API
+Kubernetes (aucun port ouvert) :
+
+```
+== Aucun Prometheus dans le cluster
+
+== 1. Requêtes refusées à l'admission par Kyverno, dernière heure
+   SANS RÉPONSE  aucune mesure collectée
+
+== 2. L'application est-elle synchronisée avec le dépôt, et saine ?
+   SANS RÉPONSE  aucune mesure collectée
+
+== 3. Vulnérabilités dans les images qui tournent dans ssf, par gravité
+   SANS RÉPONSE  aucune mesure collectée
+
+== 4. Défauts de configuration des workloads de ssf, par gravité
+   SANS RÉPONSE  aucune mesure collectée
+
+== 5. Redémarrages de conteneurs dans ssf, dernière heure
+   SANS RÉPONSE  aucune mesure collectée
+
+== 6. Réponses d'erreur (5xx) servies au public par Traefik, dernière heure
+   SANS RÉPONSE  aucune mesure collectée
+
+== 7. Alertes de sécurité en cours
+   SANS RÉPONSE  aucune mesure collectée
+```
+
+Lecture : tous les contrôles des jalons 1 à 6a **empêchent**, aucun ne **raconte**. Un refus
+Kyverno, une dérive annulée par ArgoCD, une vulnérabilité publiée après le déploiement : rien de
+tout cela ne laisse de trace consultable. Au jalon 5, l'application est restée en panne sans que
+rien ne le signale (J5-I3).
+
+## 6b — vérifications faites avant d'écrire (04/10)
+
+| # | Constat | Conséquence |
+|---|---|---|
+| V5 | `kube-prometheus-stack` : une version tous les un à deux jours. **91.7.1** (27/09) est la plus récente de plus de 7 jours : prometheus-operator v0.94.1, Grafana (chart 13.2.6), kube-state-metrics (chart 8.6.0). | Chart 91.7.1 épinglé. |
+| V6 | Le chart installe aussi **node-exporter** : pod avec `hostNetwork`, `hostPID` et montages du nœud, interdit par PSS restricted (et par notre module de namespace, qui refuse `privileged`). | node-exporter désactivé : la posture de sécurité n'a pas besoin des métriques du système des nœuds. Même raison que l'abandon de kube-bench. |
+| V7 | trivy-operator **v0.34.0** (24/08), chart 0.36.0 : scanne en continu les images qui tournent et la configuration des workloads, expose des métriques Prometheus. | Couvre la question 3 : une vulnérabilité publiée **après** le déploiement, que la CI ne voit plus. |
+| V8 | trivy-operator, droits par défaut (ClusterRole du chart, lue dans le template) : lecture de **tous les Secrets** du cluster (`accessGlobalSecretsAndServiceAccount: true`), **création de Jobs dans tous les namespaces**, lecture de toutes les ConfigMaps et de tous les journaux de pods. | Un scanner de sécurité compromis pourrait lancer un pod privilégié dans un namespace non durci : chemin d'escalade. Même problème que le chart d'ArgoCD au 5b. |
+
 ## Incidents
 
 ### J6-I1 — L'attente échoue sur un pod qui disparaît pendant qu'on l'attend
