@@ -1,0 +1,27 @@
+# Le projet borne ce qu'ArgoCD accepte de faire pour cette application, même si le dépôt le
+# demandait : une source (ce dépôt), une destination (ssf), aucun objet de niveau cluster, et
+# seulement les types d'objets du chart applicatif. C'est le second verrou : le premier, ce
+# sont les droits Kubernetes du contrôleur, donnés par Terraform (argocd.tf).
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: ssf
+  namespace: {{ .Release.Namespace }}
+spec:
+  description: Application ssf — ce dépôt, namespace ssf, rien d'autre
+  sourceRepos:
+    - {{ .Values.repoURL | quote }}
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: {{ .Values.namespace | quote }}
+  # Liste vide : aucun objet de niveau cluster (ClusterRole, CRD, namespace...).
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: apps
+      kind: Deployment
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: networking.k8s.io
+      kind: Ingress

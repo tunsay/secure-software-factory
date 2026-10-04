@@ -24,7 +24,7 @@ repos:
       - id: check-yaml
         args: [--allow-multiple-documents]
         # Les templates Helm ne sont pas du YAML ({{- ... }}) : validés par le hook chart-lint.
-        exclude: ^k8s/(chart|policies)/templates/
+        exclude: ^k8s/(chart|policies|argocd)/templates/
       - id: check-added-large-files
         args: [--maxkb=500]
       - id: detect-private-key

@@ -48,15 +48,12 @@ chart:
   stage: sast
   image: { name: alpine/helm:3.22.0, entrypoint: [""] }
   script:
-    - V=infra/terraform/platform/dev.tfvars
-    - TAG=$(sed -n 's/^image_tag *= *"\(.*\)"/\1/p' "$V")
-    - API=$(sed -n 's/^ *api *= *"\(sha256:[0-9a-f]*\)".*/\1/p' "$V")
-    - WEB=$(sed -n 's/^ *web *= *"\(sha256:[0-9a-f]*\)".*/\1/p' "$V")
-    - SET="image.tag=$TAG,image.digests.api=$API,image.digests.web=$WEB"
-    - helm lint k8s/chart --strict --set "$SET"
-    - helm template ssf k8s/chart --set "$SET" > /dev/null
+    - helm lint k8s/chart --strict -f k8s/chart/values-dev.yaml
+    - helm template ssf k8s/chart -f k8s/chart/values-dev.yaml > /dev/null
     - helm lint k8s/policies --strict
     - helm template ssf-policies k8s/policies > /dev/null
+    - helm lint k8s/argocd --strict
+    - helm template ssf-argocd k8s/argocd > /dev/null
 
 checkov:
   stage: sast

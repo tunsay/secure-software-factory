@@ -1,9 +1,10 @@
-# k8s/ — chart Helm de l'application
+# k8s/ — chart Helm de l'application, et ce qui le déploie
 
 ```
 chart/
   Chart.yaml
   values.yaml
+  values-dev.yaml       version déployée (tag + digests) : déployer = un commit sur ce fichier
   templates/
     _helpers.tpl          image dépôt:tag@digest (refuse une image sans digest), securityContext
     api.yaml              Deployment + Service de l'API
@@ -11,10 +12,14 @@ chart/
                           workers quand c'est possible (ScheduleAnyway : pas garanti)
     ingress.yaml          seul point d'entrée, vers web ; l'API n'a aucune route externe
     serviceaccounts.yaml  un compte par composant, sans jeton Kubernetes
+policies/               politiques d'admission Kyverno (jalon 5a) : signature, registre, digest
+argocd/                 projet et Application ArgoCD (jalon 5b) : ce dépôt, namespace ssf, rien d'autre
 ```
 
-Le chart est installé par Terraform (`infra/terraform/platform/app.tf`), jusqu'à ce qu'ArgoCD
-reprenne le déploiement de l'application au jalon 5.
+Depuis le jalon 5b, le chart est déployé par **ArgoCD**, depuis ce dépôt, avec
+`values-dev.yaml` ; une modification manuelle du cluster est annulée (selfHeal). ArgoCD n'a
+aucun droit de cluster : il n'écrit que dans `ssf`, et seulement les types d'objets du chart
+([ADR 0014](../docs/adr/0014-gitops-argocd-sans-droits-cluster.md)).
 
 ## Ce que le chart garantit
 
@@ -33,12 +38,12 @@ reprenne le déploiement de l'application au jalon 5.
 | Cluster kind | `infra/terraform/cluster` | créé par Terraform, pas par un fichier kind |
 | NetworkPolicies | `infra/terraform/platform/network.tf` | portées par la plateforme : celui qui déploie l'application ne doit pas pouvoir élargir ses propres flux ([ADR 0008](../docs/adr/0008-cloisonnement-reseau-et-droits.md)) |
 | Traefik | `infra/terraform/platform/ingress.tf` | composant de plateforme |
-| Politiques Kyverno | jalon 5 | vérification de signature à l'admission |
+| Kyverno, ArgoCD | `infra/terraform/platform/kyverno.tf`, `argocd.tf` | composants de plateforme ; leurs politiques et leur Application sont ici, dans `policies/` et `argocd/` |
 
 ## Vérifier le chart
 
 ```bash
-make chart-lint   # helm lint --strict, rendu avec la version déployée, Trivy sur les manifests
+make chart-lint   # helm lint --strict des trois charts, rendu avec values-dev.yaml, Trivy sur les manifests
 ```
 
 Même contrôle en hook pre-commit (dès qu'un fichier du chart change) et en CI.

@@ -22,15 +22,13 @@ TF_CLUSTER_STATE_DIR := $(HOME)/.local/state/ssf
 TF_CLUSTER_STATE     := $(TF_CLUSTER_STATE_DIR)/cluster.tfstate
 KUBECTL := kubectl --kubeconfig $(KUBECONFIG_SSF) --context kind-ssf-dev
 
-# Chart de l'app, rendu avec la version réellement déployée (lue dans dev.tfvars).
-CHART      := k8s/chart
-CHART_TAG  := $(shell sed -n 's/^image_tag *= *"\(.*\)"/\1/p' $(TF_PLATFORM)/dev.tfvars)
-CHART_API  := $(shell sed -n 's/^ *api *= *"\(sha256:[0-9a-f]*\)".*/\1/p' $(TF_PLATFORM)/dev.tfvars)
-CHART_WEB  := $(shell sed -n 's/^ *web *= *"\(sha256:[0-9a-f]*\)".*/\1/p' $(TF_PLATFORM)/dev.tfvars)
-CHART_SET  := image.tag=$(CHART_TAG),image.digests.api=$(CHART_API),image.digests.web=$(CHART_WEB)
+# Chart de l'app et valeurs de l'environnement : exactement ce qu'ArgoCD déploie (jalon 5b).
+CHART        := k8s/chart
+CHART_VALUES := $(CHART)/values-dev.yaml
 
 .PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools \
-        infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof isolation-proof isolation-check supply-chain-proof admission-proof
+        infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof isolation-proof isolation-check supply-chain-proof admission-proof drift-proof \
+        drift-check app-wait
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -106,29 +104,39 @@ install-tools: ## Installe l'outillage sous WSL (terraform, kubectl, kind, helm,
 # Vide en local : chaque apply affiche son plan et attend « yes ». La CI e2e passe -auto-approve,
 # sur un cluster éphémère : même cible, même code, seule la confirmation change.
 TF_APPLY_FLAGS ?=
+# Variables propres à la couche platform. Vide en local : ArgoCD suit main. La CI e2e passe le
+# commit testé : TF_PLATFORM_VARS=-var=argocd_revision=<sha>.
+TF_PLATFORM_VARS ?=
 
-infra-up: ## Crée le cluster kind puis applique la couche platform (demande confirmation)
+infra-up: ## Crée le cluster kind, applique la couche platform, attend qu'ArgoCD ait déployé l'app
 	mkdir -p -m 700 $(TF_CLUSTER_STATE_DIR)
 	cd $(TF_CLUSTER) && terraform init -input=false -backend-config="path=$(TF_CLUSTER_STATE)" \
 	  && terraform apply -input=false $(TF_APPLY_FLAGS)
 	@# Le namespace de l'état distant est le seul objet créé hors Terraform : il doit exister avant l'init.
 	$(KUBECTL) create namespace terraform-state --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	cd $(TF_PLATFORM) && terraform init -input=false -backend-config="config_path=$(KUBECONFIG_SSF)" \
-	  && terraform apply -input=false -var-file=dev.tfvars $(TF_APPLY_FLAGS)
+	  && terraform apply -input=false -var-file=dev.tfvars $(TF_PLATFORM_VARS) $(TF_APPLY_FLAGS)
+	@# Depuis le jalon 5b, l'application est déployée par ArgoCD, après Terraform : on l'attend.
+	@$(MAKE) --no-print-directory app-wait
 
 infra-plan: ## Plan de la couche platform, sans appliquer
-	cd $(TF_PLATFORM) && terraform plan -input=false -var-file=dev.tfvars
+	cd $(TF_PLATFORM) && terraform plan -input=false -var-file=dev.tfvars $(TF_PLATFORM_VARS)
 
 infra-down: ## Détruit platform puis le cluster (demande confirmation)
-	-cd $(TF_PLATFORM) && terraform destroy -input=false -var-file=dev.tfvars
+	-cd $(TF_PLATFORM) && terraform destroy -input=false -var-file=dev.tfvars $(TF_PLATFORM_VARS)
 	cd $(TF_CLUSTER) && terraform destroy -input=false
 
-chart-lint: ## Lint et rendu des charts Helm (application, politiques), scan trivy des manifests rendus
-	helm lint $(CHART) --strict --set $(CHART_SET)
-	helm template ssf $(CHART) --set $(CHART_SET) > /dev/null
-	trivy config --exit-code 1 --severity HIGH,CRITICAL --helm-set $(CHART_SET) $(CHART)
+chart-lint: ## Lint et rendu des charts Helm (application, politiques, ArgoCD), scan trivy des manifests rendus
+	helm lint $(CHART) --strict -f $(CHART_VALUES)
+	helm template ssf $(CHART) -f $(CHART_VALUES) > /dev/null
+	trivy config --exit-code 1 --severity HIGH,CRITICAL --helm-values $(CHART_VALUES) $(CHART)
 	helm lint k8s/policies --strict
 	helm template ssf-policies k8s/policies > /dev/null
+	helm lint k8s/argocd --strict
+	helm template ssf-argocd k8s/argocd > /dev/null
+
+app-wait: ## Attend qu'ArgoCD ait synchronisé l'app (Synced, Healthy) et que ses pods soient prêts
+	@bash scripts/app-wait.sh
 
 app-proof: ## Preuve 3a : l'app répond via l'ingress, depuis des pods durcis
 	$(KUBECTL) -n ssf get pods -o wide
@@ -178,6 +186,12 @@ supply-chain-proof: ## Preuve jalon 4 : signature, SBOM, digests — même comma
 
 admission-proof: ## Preuve jalon 5a : quelles images le cluster admet (dry-run serveur, rien n'est créé)
 	@bash scripts/admission-proof.sh
+
+drift-proof: ## Preuve jalon 5b : cinq modifications manuelles de l'app — le cluster revient-il seul à l'état du dépôt ?
+	@bash scripts/drift-proof.sh
+
+drift-check: ## drift-proof + verdict : échoue si une dérive décrite par le dépôt persiste, ou si ArgoCD a trop de droits (CI e2e)
+	@DRIFT_STRICT=1 bash scripts/drift-proof.sh
 
 # Verdicts attendus après durcissement, dans l'ordre des tests de isolation-proof.
 ISOLATION_EXPECTED := BLOQUÉ BLOQUÉ BLOQUÉ OUVERT OUVERT BLOQUÉ BLOQUÉ no no

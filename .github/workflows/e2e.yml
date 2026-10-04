@@ -9,9 +9,9 @@ name: e2e
 on:
   push:
     branches: [main]
-    paths: ["infra/**", "k8s/**", "scripts/k8s-probe.py", "Makefile", ".github/workflows/e2e.yml"]
+    paths: ["infra/**", "k8s/**", "scripts/k8s-probe.py", "scripts/app-wait.sh", "scripts/drift-proof.sh", "Makefile", ".github/workflows/e2e.yml"]
   pull_request:
-    paths: ["infra/**", "k8s/**", "scripts/k8s-probe.py", "Makefile", ".github/workflows/e2e.yml"]
+    paths: ["infra/**", "k8s/**", "scripts/k8s-probe.py", "scripts/app-wait.sh", "scripts/drift-proof.sh", "Makefile", ".github/workflows/e2e.yml"]
   workflow_dispatch:
   # Chaque lundi, sans commit : détecte une dérive extérieure (image tirée, chart, provider).
   schedule:
@@ -26,10 +26,10 @@ concurrency:
 
 jobs:
   isolation:
-    name: cluster éphémère · isolation-check + app-proof
+    name: cluster éphémère · isolation-check + app-proof + drift-check
     # Version figée, pas ubuntu-latest : le résultat dépend du noyau du runner.
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -43,8 +43,12 @@ jobs:
 
       # Cluster créé de zéro : le plan affiche « (known after apply) » pour la clé privée du
       # cluster, jamais sa valeur (elle n'apparaît qu'au plan d'un remplacement, incident I2).
-      - name: make infra-up (cluster + platform, sans confirmation interactive)
-        run: make infra-up TF_APPLY_FLAGS=-auto-approve
+      # ArgoCD déploie exactement le commit testé (pas la tête de main), puis infra-up attend
+      # que l'application soit synchronisée et saine. Ses pods passent par Kyverno en Deny.
+      - name: make infra-up (cluster + platform + ArgoCD, sans confirmation interactive)
+        env:
+          REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: make infra-up TF_APPLY_FLAGS=-auto-approve TF_PLATFORM_VARS="-var=argocd_revision=$REVISION"
 
       - name: make isolation-check — échoue si un seul test diffère de l'après attendu
         run: make isolation-check
@@ -52,10 +56,18 @@ jobs:
       - name: make app-proof — non-régression du jalon 3a
         run: make app-proof
 
+      # En dernier : la preuve perturbe l'application, qu'ArgoCD doit remettre en état seul.
+      - name: make drift-check — échoue si une dérive décrite persiste ou si ArgoCD a trop de droits
+        run: make drift-check
+
       - name: diagnostic (en cas d'échec uniquement)
         if: failure()
         run: |
           KC="kubectl --kubeconfig $HOME/.kube/ssf-dev --context kind-ssf-dev"
           $KC get pods -A -o wide || true
           $KC -n ssf get networkpolicy || true
+          $KC -n ssf get events --sort-by=.lastTimestamp | tail -30 || true
+          $KC -n argocd get applications.argoproj.io ssf -o yaml | tail -60 || true
+          $KC -n argocd logs deploy/argocd-repo-server --tail=50 || true
+          $KC -n argocd logs statefulset/argocd-application-controller --tail=80 || true
           $KC -n kube-system logs -l app=kindnet --tail=100 --prefix || true

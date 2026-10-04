@@ -43,6 +43,12 @@ resource "helm_release" "traefik" {
         # portent l'annotation kubernetes.io/ingress.class de cette valeur, et aucun autre :
         # la classe reste explicite.
         ingressClass = local.ingress_class
+        # Adresse publiée dans le statut des Ingress servis (jalon 5b). Par défaut, Traefik
+        # recopie celle de son Service ; en NodePort, il n'en a pas : le statut restait vide,
+        # et ArgoCD jugeait l'application « Progressing » sans fin (sa règle de santé d'un
+        # Ingress : sain = une adresse publiée). 127.0.0.1 est l'adresse réelle d'accès.
+        publishedService = { enabled = false }
+        ingressEndpoint  = { ip = "127.0.0.1" }
       }
     }
 

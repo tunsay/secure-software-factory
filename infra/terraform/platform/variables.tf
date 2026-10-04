@@ -16,39 +16,18 @@ variable "app_namespace" {
   default     = "ssf"
 }
 
-variable "image_registry" {
-  description = "Registre et propriétaire des images applicatives."
-  type        = string
-  default     = "ghcr.io/tunsay"
-}
-
-variable "image_tag" {
+variable "argocd_revision" {
   description = <<-EOT
-    Tag des images ssf-api et ssf-web : le SHA complet d'un commit de main, publié par la CI.
-    Jamais latest : un tag mobile ne dit pas ce qui tourne. Jalon 4 : passage au digest.
+    Révision du dépôt que suit ArgoCD : main en local ; le SHA exact du commit testé dans le
+    workflow e2e (make infra-up TF_PLATFORM_VARS=-var=argocd_revision=<sha>). La version de
+    l'application, elle, est dans k8s/chart/values-dev.yaml, pas ici (jalon 5b, ADR 0014).
   EOT
   type        = string
+  default     = "main"
 
   validation {
-    condition     = can(regex("^[0-9a-f]{40}$", var.image_tag))
-    error_message = "SHA de commit complet (40 caractères hexadécimaux) attendu."
-  }
-}
-
-variable "image_digests" {
-  description = <<-EOT
-    Digest de chaque image, publiée et signée par la CI pour ce commit (résumé du job « images »).
-    C'est lui qui fait foi au tirage : un tag peut être déplacé dans le registre, un digest
-    désigne un contenu unique (jalon 4, ADR 0010).
-  EOT
-  type = object({
-    api = string
-    web = string
-  })
-
-  validation {
-    condition     = alltrue([for d in values(var.image_digests) : can(regex("^sha256:[0-9a-f]{64}$", d))])
-    error_message = "Digest sha256 complet attendu pour chaque image (sha256: suivi de 64 caractères hexadécimaux)."
+    condition     = var.argocd_revision == "main" || can(regex("^[0-9a-f]{40}$", var.argocd_revision))
+    error_message = "main, ou un SHA de commit complet (40 caractères hexadécimaux)."
   }
 }
 

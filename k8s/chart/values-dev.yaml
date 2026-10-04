@@ -1,0 +1,15 @@
+# Environnement dev : l'état voulu de l'application, lu par ArgoCD (jalon 5b, ADR 0014).
+#
+# Déployer une version = modifier ces lignes, commiter, pousser. ArgoCD applique seul ;
+# personne n'applique l'application à la main. Valeurs à reprendre du résumé du job « images »
+# de la CI : Kyverno refuse toute image qui n'est pas signée par ce workflow (jalon 5a).
+# Le tag est informatif ; c'est le digest qui fait foi au tirage.
+image:
+  tag: d9fa77cee50b3ed6c3ce641a006a3c4597608751
+  digests:
+    api: sha256:752c1b9c5f078958155d30b96c809fea1dfed29d32725e759eb993ddf635eed2
+    web: sha256:69c197b5009c0781d69a24f7cf90c829e0471101c671e960a3b4d5c4c65968e4
+
+api:
+  env:
+    APP_ENV: dev

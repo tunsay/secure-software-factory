@@ -218,6 +218,86 @@ recréés par Kubernetes **en passant par Kyverno en `Deny`** — aucun événem
 (`kubectl wait --for=condition=Ready`), `make app-proof` vert. La preuve ne repose pas que sur le
 dry-run : l'application elle-même est admise.
 
+## 5a, dernière preuve — l'image signée au seul format v3, déployée sous `Deny` (04/10)
+
+- **Commit `d9fa77c`** (5a en `Deny`, signature v3 seule) : `ci` et `e2e` verts. Le workflow e2e
+  a monté un cluster neuf avec Kyverno en `Deny` **dès le départ**, et l'application y a été
+  admise : la preuve ne dépend plus de mon poste.
+- Registre, sans authentification : `ssf-api` de d9fa77c (`sha256:752c1b9c…`) → index v3
+  `sha256-<digest>` **200**, `.sig` **404**, `.att` **404** : signée au seul format v3.
+  `ssf-web` (`sha256:69c197b5…`) a **le même digest qu'en ddbf88f** : le build du front est
+  reproductible (mêmes sources, même image à l'octet près), celui de l'API ne l'est pas — noté.
+- `make infra-up` (`0 added, 1 changed` : l'application seule), puis :
+  - `make admission-proof` : test 1 — l'image API de d9fa77c, v3 seule, celle qui tourne —
+    **ADMISE** ; tests 2 à 5 **REFUSÉE** ; test 6 **ADMISE**. Détail : le test 5 (`latest`) est
+    cette fois refusé par `ssf-registre-et-digest` et non par `ssf-signature-ci`. Les deux
+    politiques le refusent ; l'API renvoie le premier refus reçu, l'ordre n'est pas garanti.
+  - `make supply-chain-proof` : OUI partout ; API : signature valide, identité vérifiée, SBOM
+    de 2 812 composants.
+  - `make app-proof` vert.
+- **L'ADR 0013 est prouvé sur un pod réel**, plus seulement en dry-run.
+
+## 5b — décisions de Tunsay (04/10)
+
+| Question | Décision | Raison |
+|---|---|---|
+| Où ArgoCD lit-il l'état voulu ? (le plan prévoyait un dépôt de manifests séparé) | **Ce dépôt**, `k8s/chart` + `values-dev.yaml` — écart au plan, ADR 0014 | le workflow e2e fait déployer exactement le commit testé ; aucun jeton d'écriture vers un autre dépôt, la CI reste en lecture seule et ne peut pas déployer |
+| Kyverno doit-il aussi exiger runAsNonRoot et des limites ? (prévu au plan) | **Non : laissé à PSS restricted + LimitRange** (jalon 2) — écart au plan | PSS refuse déjà le root ; le LimitRange injecte des limites **avant** que Kyverno voie le pod (mutation avant validation), une règle « limites » ne pourrait donc jamais échouer dans `ssf` : un doublon impossible à prouver |
+| Bonus reportés du jalon 3 : Sealed Secrets, kube-bench | **Abandonnés** | l'application n'a aucun secret à protéger (zéro secret statique, OIDC partout) ; kube-bench s'exécute en pod privilégié (hostPID, montages du nœud), à l'opposé de la posture du cluster |
+
+## 5b — vérifications faites avant d'écrire (04/10)
+
+| # | Constat | Conséquence |
+|---|---|---|
+| V8 | Argo CD **v3.5.3** (14/09) est la dernière stable, la 3.6 en pré-version. Charts `argo-cd` 10.9.1 à 10.9.6 : tous en v3.5.3. **10.9.2** (17/09) est la plus récente de plus de 7 jours ; les suivantes ne touchent que redis_exporter, dex et un nom de secret Redis, rien que nous utilisons. | Chart 10.9.2 épinglé. |
+| V9 | Chart par défaut, `clusterrole.yaml` du contrôleur : `apiGroups: '*'`, `resources: '*'`, `verbs: '*'`, plus `nonResourceURLs: '*'`. **L'outil de déploiement serait administrateur du cluster.** | `createClusterRoles: false` ; droits donnés par Terraform, dans `ssf` seulement. |
+| V10 | Source v3.5.3, `Cluster.RawRestConfig` : pour `https://kubernetes.default.svc` sans identifiants, ArgoCD utilise `rest.InClusterConfig()`, le compte de service de son pod. | Cluster déclaré restreint à `ssf`, **sans aucun jeton stocké**. |
+| V11 | Source v3.5.3, `health_ingress.go` : un Ingress est sain **seulement** si `status.loadBalancer.ingress` est rempli, sinon « Progressing ». Traefik en NodePort ne remplit pas ce statut. | Sans correction, l'application resterait « Progressing » pour toujours. Traefik publie `127.0.0.1` (`ingressEndpoint.ip`, présent dans le schéma du chart 41.6.0 ; son Role namespacé a `ingresses/status`). |
+| V12 | Chart 10.9.2 : contrôleur, repo-server (et son conteneur d'initialisation), serveur, Redis (UID 999), job d'initialisation de Redis : tous conformes à PSS restricted par défaut. | Namespace `argocd` en restricted, sans exception. |
+| V13 | `resource.respectRBAC: "normal"` documenté dans `argocd-cm.yaml` v3.5.3 : ArgoCD ne surveille que ce qu'il a le droit de lister. | Indispensable avec des droits restreints : sinon chaque type interdit (Secrets…) fait échouer la lecture de `ssf`. |
+
+## AVANT 5b — `make drift-proof` (04/10, application gérée par Terraform)
+
+```
+== Application gérée par Terraform (helm_release, appliqué à la main)
+
+== État de départ
+   APP_ENV de l'API = 'dev' ; variable DRIFT = '' ; front : 2 répliques
+   service api : présent ; ConfigMap intrus : absente
+
+== Dérives manuelles
+   1. APP_ENV de l'API passé de dev à prod                (décrit dans le dépôt)
+   4. variable DRIFT ajoutée à l'API                       (non décrite)
+   2. front réduit à 0 réplique                            (décrit dans le dépôt)
+   3. service de l'API supprimé                            (décrit dans le dépôt)
+   5. ConfigMap « intrus » créée dans le namespace         (non décrite)
+
+== Observation pendant 60 s
+PERSISTANTE  après 60 s — 1. APP_ENV de l'API modifié
+PERSISTANTE  après 60 s — 2. front à 0 réplique
+PERSISTANTE  après 60 s — 3. service de l'API supprimé
+PERSISTANTE  après 60 s — 4. variable DRIFT ajoutée
+PERSISTANTE  après 60 s — 5. ConfigMap intrus
+
+== État final
+   APP_ENV de l'API = 'prod' ; variable DRIFT = 'manuel' ; front : 0 répliques
+   service api : absent ; ConfigMap intrus : présente
+   (nettoyé : variable DRIFT et ConfigMap intrus)
+```
+
+Puis `terraform plan` de la couche platform, juste après :
+
+```
+Terraform has compared your real infrastructure against your configuration
+and found no differences, so no changes are needed.
+code de sortie du plan : 0
+```
+
+Lecture : rien ne revient seul, et **Terraform ne voit rien** — il compare l'état de sa release
+Helm, pas les objets réels. L'application est en panne (front à zéro, API injoignable),
+configurée autrement que le dépôt (`APP_ENV=prod`), et le seul outil de déploiement affirme que
+tout est conforme. Seul un humain qui regarde s'en apercevrait.
+
 ## Incidents
 
 ### J5-I1 — La prémisse de l'ADR 0012 était fausse : la mesure la dément

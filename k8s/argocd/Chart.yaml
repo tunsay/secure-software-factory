@@ -1,0 +1,5 @@
+apiVersion: v2
+name: ssf-argocd
+description: Projet et Application ArgoCD de l'application ssf — jalon 5b, ADR 0014.
+type: application
+version: 0.1.0

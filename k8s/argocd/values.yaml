@@ -1,0 +1,19 @@
+# Projet et Application ArgoCD de l'application ssf. Valeurs fournies par Terraform
+# (infra/terraform/platform/argocd.tf).
+
+# Empreinte des fichiers du chart, calculée par Terraform : fait apparaître au plan toute
+# modification du chart local. Aucun template ne la lit.
+argocdChecksum: ""
+
+# Seule source admise : ce dépôt (public, lu sans identifiants).
+repoURL: https://github.com/tunsay/secure-software-factory.git
+
+# Révision suivie : main en local ; le SHA exact du commit testé dans le workflow e2e.
+revision: main
+
+# Chart de l'application et valeurs de l'environnement, relatives à ce chemin.
+path: k8s/chart
+valueFile: values-dev.yaml
+
+# Seule destination admise.
+namespace: ssf

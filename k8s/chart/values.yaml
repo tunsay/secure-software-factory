@@ -1,8 +1,5 @@
-# Valeurs par défaut du chart. Terraform (infra/terraform/platform/app.tf) fournit le reste.
-
-# Empreinte des fichiers du chart, calculée par Terraform. Aucun template ne la lit : elle sert
-# seulement à faire apparaître au plan toute modification du chart local.
-chartChecksum: ""
+# Valeurs par défaut du chart. L'environnement fournit le reste : values-dev.yaml, lu par
+# ArgoCD (jalon 5b).
 
 image:
   registry: ghcr.io/tunsay

@@ -1,14 +1,15 @@
 # Admission : Kyverno et les politiques du namespace applicatif (jalon 5a, ADR 0012).
 #
-# Ordre : Kyverno (et ses CRD) → politiques → application. L'application vient en dernier pour
-# que ses propres pods passent par la vérification de signature à leur création : sur un cluster
-# neuf (e2e), c'est la preuve que la chaîne admet ce qu'elle a signé.
+# Ordre : Kyverno (et ses CRD) → politiques → application (déployée par ArgoCD, argocd.tf).
+# L'application vient en dernier pour que ses propres pods passent par la vérification de
+# signature à leur création : sur un cluster neuf (e2e), c'est la preuve que la chaîne admet ce
+# qu'elle a signé.
 
 locals {
   policies_dir = "${path.module}/../../../k8s/policies"
 
-  # Même principe que pour le chart de l'application (app.tf) : un chart local modifié sans
-  # changement de version doit apparaître au plan.
+  # Le provider helm ne relit pas un chart local dont la version n'a pas bougé : sans cette
+  # empreinte, modifier un template ne produirait aucun changement au plan.
   policies_checksum = sha256(join("", [
     for f in sort(fileset(local.policies_dir, "**")) : filesha256("${local.policies_dir}/${f}")
   ]))

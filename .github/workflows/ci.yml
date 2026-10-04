@@ -126,19 +126,17 @@ jobs:
       # Chart de l'app : même contrôle que `make chart-lint`, rendu avec la version déployée.
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with: { version: v3.22.0 }
-      - name: helm lint + rendu du chart
+      - name: helm lint + rendu des charts
         run: |
-          V=infra/terraform/platform/dev.tfvars
-          TAG=$(sed -n 's/^image_tag *= *"\(.*\)"/\1/p' "$V")
-          API=$(sed -n 's/^ *api *= *"\(sha256:[0-9a-f]*\)".*/\1/p' "$V")
-          WEB=$(sed -n 's/^ *web *= *"\(sha256:[0-9a-f]*\)".*/\1/p' "$V")
-          SET="image.tag=$TAG,image.digests.api=$API,image.digests.web=$WEB"
-          helm lint k8s/chart --strict --set "$SET"
+          # Valeurs de l'environnement : exactement ce qu'ArgoCD déploie (jalon 5b).
+          helm lint k8s/chart --strict -f k8s/chart/values-dev.yaml
           mkdir -p rendered
-          helm template ssf k8s/chart --set "$SET" > rendered/ssf.yaml
-          # Politiques d'admission Kyverno (jalon 5a) : lint et rendu.
+          helm template ssf k8s/chart -f k8s/chart/values-dev.yaml > rendered/ssf.yaml
+          # Politiques d'admission Kyverno (jalon 5a), projet et Application ArgoCD (jalon 5b).
           helm lint k8s/policies --strict
           helm template ssf-policies k8s/policies > /dev/null
+          helm lint k8s/argocd --strict
+          helm template ssf-argocd k8s/argocd > /dev/null
       - name: trivy config (manifests Kubernetes rendus)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -282,7 +280,7 @@ jobs:
           cosign verify --certificate-identity "$SIGNER" --certificate-oidc-issuer "$ISSUER" "$REF" > /dev/null
           cosign verify-attestation --type cyclonedx --certificate-identity "$SIGNER" \
             --certificate-oidc-issuer "$ISSUER" "$REF" > /dev/null
-          # Référence à reporter dans infra/terraform/platform/dev.tfvars pour la déployer.
+          # Référence à reporter dans k8s/chart/values-dev.yaml pour la déployer (ArgoCD, jalon 5b).
           {
             echo "### ssf-$SVC : publiée, signée, SBOM attesté"
             echo '```'

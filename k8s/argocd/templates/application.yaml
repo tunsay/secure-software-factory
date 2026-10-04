@@ -1,0 +1,34 @@
+# L'application ssf : le chart k8s/chart de ce dépôt, avec les valeurs de l'environnement,
+# synchronisé en continu. Pas de finalizer de suppression en cascade : désinstaller ArgoCD ne
+# supprime pas l'application qui tourne.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ssf
+  namespace: {{ .Release.Namespace }}
+spec:
+  project: ssf
+  source:
+    repoURL: {{ .Values.repoURL | quote }}
+    targetRevision: {{ .Values.revision | quote }}
+    path: {{ .Values.path | quote }}
+    helm:
+      valueFiles:
+        - {{ .Values.valueFile | quote }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.namespace | quote }}
+  syncPolicy:
+    automated:
+      # Supprimer du cluster ce qui a disparu du dépôt.
+      prune: true
+      # Annuler toute modification manuelle d'un objet géré (preuve : make drift-proof).
+      selfHeal: true
+    # Sans retry, une synchronisation automatique qui échoue n'est pas retentée pour la même
+    # révision (ex. webhook Kyverno pas encore prêt au premier passage).
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

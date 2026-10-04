@@ -102,7 +102,8 @@ Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make inf
   cluster a disparu → `terraform state rm kind_cluster.this` puis `apply`.
 - **Kyverno en `Deny` avec `failurePolicy: Fail`** : si Kyverno est arrêté ou ne joint pas
   GHCR/Rekor, aucun pod ne se crée dans `ssf` (voulu : « pas pu contrôler » vaut « refusé »).
-  Déployer une image = reporter tag ET digests du résumé du job `images` dans `dev.tfvars`.
+  Déployer une image = reporter tag ET digests du résumé du job `images` dans
+  `k8s/chart/values-dev.yaml`, commiter, pousser : ArgoCD applique (jalon 5b).
 - **Constater une recréation de pods** : `kubectl wait --for=condition=Ready pod -l ...`, jamais
   `kubectl rollout status` (il répond « terminé » si le Deployment n'a pas changé ; J5-I2).
 

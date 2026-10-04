@@ -1,6 +1,7 @@
 # Couche platform : ce qui tourne dans le cluster.
-# Jalon 2 : namespaces durcis. Jalon 3 : ingress (ingress.tf), application (app.tf),
-# NetworkPolicies, RBAC. Jalon 5 : Kyverno, ArgoCD. Jalon 6 : Prometheus, Grafana.
+# Jalon 2 : namespaces durcis. Jalon 3 : ingress (ingress.tf), NetworkPolicies, RBAC.
+# Jalon 5 : Kyverno (kyverno.tf), ArgoCD (argocd.tf), qui déploie l'application depuis le dépôt.
+# Jalon 6 : Prometheus, Grafana.
 
 # Namespace applicatif, PSS restricted : aucun pod root, privilégié ou avec capacités.
 module "ns_app" {
@@ -29,7 +30,7 @@ module "ns_ingress" {
   }
 }
 
-# Namespace des outils de sécurité (Kyverno, Sealed Secrets). Quota plus large : ce sont
+# Namespace des outils de sécurité (Kyverno). Quota plus large : ce sont
 # des contrôleurs, pas des workloads applicatifs.
 module "ns_security" {
   source = "../modules/namespace"
