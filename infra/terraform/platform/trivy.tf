@@ -215,8 +215,12 @@ resource "kubernetes_role_binding_v1" "trivy_own" {
   }
 }
 
-# Niveau cluster, en lecture seule (nœuds, namespaces, définitions de ressources) et sur ses
-# seuls rapports de niveau cluster. Ni Secret, ni Job, ni droit d'écriture sur autre chose.
+# Niveau cluster, en lecture seule et sur ses seuls rapports de niveau cluster. Ni Secret, ni
+# Job, ni droit d'écriture sur autre chose. Son contrôleur d'audit de configuration surveille
+# TOUJOURS ClusterRole, ClusterRoleBinding, CRD et PersistentVolume, même limité à ssf
+# (marqueurs +kubebuilder:rbac de pkg/configauditreport/controller/resource.go, v0.34.0) : sans
+# leur lecture, son cache ne se synchronise jamais et il redémarre en boucle (journal du
+# jalon 6, J6-I2).
 resource "kubernetes_cluster_role_v1" "trivy_cluster" {
   metadata {
     name = "trivy-operator-cluster"
@@ -224,7 +228,12 @@ resource "kubernetes_cluster_role_v1" "trivy_cluster" {
 
   rule {
     api_groups = [""]
-    resources  = ["namespaces", "nodes"]
+    resources  = ["namespaces", "nodes", "persistentvolumes"]
+    verbs      = ["get", "list", "watch"]
+  }
+  rule {
+    api_groups = ["rbac.authorization.k8s.io"]
+    resources  = ["clusterrolebindings", "clusterroles"]
     verbs      = ["get", "list", "watch"]
   }
   rule {

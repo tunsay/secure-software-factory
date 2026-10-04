@@ -74,7 +74,9 @@ ask "4. Défauts de configuration des objets de ssf, par gravité" \
   'sum by (severity) (trivy_resource_configaudits{namespace="ssf"})'
 ask "5. Redémarrages de conteneurs dans ssf, dernière heure" \
   'sum(increase(kube_pod_container_status_restarts_total{namespace="ssf"}[1h]))'
-ask "6. Réponses d'erreur (5xx) servies au public par Traefik, depuis son démarrage" \
-  'sum(traefik_entrypoint_requests_total{entrypoint="web", code=~"5.."})'
+# Par code, pas seulement les 5xx : une série 5xx n'existe qu'après la première erreur ; voir les
+# autres codes prouve que Traefik est bien mesuré, et une 5xx s'y ajoute dès qu'elle survient.
+ask "6. Réponses servies au public par Traefik, par code, depuis son démarrage" \
+  'sum by (code) (traefik_entrypoint_requests_total{entrypoint="web"})'
 ask "7. Alertes de sécurité en cours" \
   'count by (alertname) (ALERTS{alertstate="firing", famille="securite"})'

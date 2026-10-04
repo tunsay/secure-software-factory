@@ -212,3 +212,28 @@ rien ne le signale (J5-I3).
   entièrement prête.
 - **Leçon** : pendant un changement, attendre un objet stable, pas des objets éphémères. Même
   famille que J5-I2 : une attente doit viser l'état qu'on veut constater.
+
+### J6-I2 — trivy-operator redémarre en boucle : nos droits restreints étaient incomplets
+
+- **Symptôme** : après l'installation du 6b (`15 added, 4 changed, 0 destroyed`),
+  `make posture-proof` répond à 5 questions sur 7, mais « aucune série » pour les
+  vulnérabilités et les défauts de configuration. Diagnostic en lecture seule : le pod
+  `trivy-operator` est en `CrashLoopBackOff` (5 redémarrages en 15 min), aucun rapport dans
+  `ssf`.
+- **Journal de l'opérateur** : `clusterroles.rbac.authorization.k8s.io is forbidden: … cannot
+  list resource "clusterroles" … at the cluster scope`, idem pour `persistentvolumes`, puis
+  `Timeout: failed waiting for *v1.ClusterRoleBinding Informer to sync` et l'arrêt :
+  `unable to run trivy operator: starting controllers manager: failed to wait for configmap
+  caches to sync`.
+- **Cause** : le contrôleur d'audit de configuration de trivy-operator surveille **toujours**
+  quatre types d'objets de niveau cluster — ClusterRole, ClusterRoleBinding, CRD,
+  PersistentVolume —, même limité au namespace `ssf`. Vérifié dans le source v0.34.0
+  (`pkg/configauditreport/controller/resource.go`, liste `clusterResources` et marqueurs
+  `+kubebuilder:rbac`). Nos droits accordaient les CRD, pas les trois autres : le cache ne se
+  synchronise jamais, l'opérateur s'arrête, Kubernetes le relance, en boucle.
+- **Correction** : lecture seule (`get`, `list`, `watch`) de ces trois types au niveau cluster.
+  Toujours ni Secret, ni Job hors de `security`, ni écriture hors de ses rapports.
+- **Leçon** : pour restreindre les droits d'un opérateur, la source de vérité est la liste de
+  ce qu'il surveille dans son code (ici, les marqueurs `+kubebuilder:rbac`), pas la notice du
+  chart. Et c'est le risque qu'on avait accepté en choisissant des droits restreints : il s'est
+  réalisé, il se corrige en trois lignes, et le diagnostic tient dans le journal de l'opérateur.
