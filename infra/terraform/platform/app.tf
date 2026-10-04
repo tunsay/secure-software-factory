@@ -34,6 +34,7 @@ resource "helm_release" "app" {
     api     = { env = { APP_ENV = var.environment } }
   })]
 
-  # L'Ingress de l'app n'est servi qu'une fois la classe Traefik déclarée.
-  depends_on = [helm_release.traefik]
+  # L'Ingress de l'app n'est servi qu'une fois Traefik en place ; les pods de l'app sont créés
+  # après les politiques d'admission, pour passer eux-mêmes la vérification de signature.
+  depends_on = [helm_release.traefik, helm_release.admission_policies]
 }

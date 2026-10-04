@@ -136,6 +136,9 @@ jobs:
           helm lint k8s/chart --strict --set "$SET"
           mkdir -p rendered
           helm template ssf k8s/chart --set "$SET" > rendered/ssf.yaml
+          # Politiques d'admission Kyverno (jalon 5a) : lint et rendu.
+          helm lint k8s/policies --strict
+          helm template ssf-policies k8s/policies > /dev/null
       - name: trivy config (manifests Kubernetes rendus)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -259,15 +262,10 @@ jobs:
           SVC: ${{ matrix.svc }}
         run: |
           set -euo pipefail
-          # Format cosign v3 (bundle Sigstore, artefact OCI rattaché à l'image).
+          # Format cosign v3 seul (bundle Sigstore). La double signature de l'ADR 0012 est retirée
+          # (ADR 0013) : Kyverno 1.19.1 vérifie ce format avec ImageValidatingPolicy, mesuré.
           cosign sign --yes "$REF"
           cosign attest --yes --type cyclonedx --predicate "sbom-$SVC.cdx.json" "$REF"
-          # Ancien format, en plus, TRANSITOIRE (ADR 0012) : Kyverno 1.19.1 ne lit pas encore les
-          # bundles v3 rangés sur GHCR (PR kyverno#16754). À retirer dès qu'une version publiée
-          # le fait. --use-signing-config=false : exigé par cosign avec l'ancien format.
-          cosign sign --yes --new-bundle-format=false --use-signing-config=false "$REF"
-          cosign attest --yes --new-bundle-format=false --use-signing-config=false \
-            --type cyclonedx --predicate "sbom-$SVC.cdx.json" "$REF"
 
       # Même règle que la preuve locale (make supply-chain-proof) et que Kyverno au jalon 5 :
       # signée par CE workflow, sur main, et par aucune autre identité.
@@ -281,16 +279,12 @@ jobs:
           ISSUER: https://token.actions.githubusercontent.com
         run: |
           set -euo pipefail
-          # Les deux formats, avec la même identité exacte : chacun doit tenir seul.
-          for fmt in true false; do
-            cosign verify --new-bundle-format="$fmt" --certificate-identity "$SIGNER" \
-              --certificate-oidc-issuer "$ISSUER" "$REF" > /dev/null
-            cosign verify-attestation --new-bundle-format="$fmt" --type cyclonedx \
-              --certificate-identity "$SIGNER" --certificate-oidc-issuer "$ISSUER" "$REF" > /dev/null
-          done
+          cosign verify --certificate-identity "$SIGNER" --certificate-oidc-issuer "$ISSUER" "$REF" > /dev/null
+          cosign verify-attestation --type cyclonedx --certificate-identity "$SIGNER" \
+            --certificate-oidc-issuer "$ISSUER" "$REF" > /dev/null
           # Référence à reporter dans infra/terraform/platform/dev.tfvars pour la déployer.
           {
-            echo "### ssf-$SVC : publiée, signée (formats v3 et ancien), SBOM attesté"
+            echo "### ssf-$SVC : publiée, signée, SBOM attesté"
             echo '```'
             echo "$DEPLOY"
             echo '```'

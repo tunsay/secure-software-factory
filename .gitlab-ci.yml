@@ -55,6 +55,8 @@ chart:
     - SET="image.tag=$TAG,image.digests.api=$API,image.digests.web=$WEB"
     - helm lint k8s/chart --strict --set "$SET"
     - helm template ssf k8s/chart --set "$SET" > /dev/null
+    - helm lint k8s/policies --strict
+    - helm template ssf-policies k8s/policies > /dev/null
 
 checkov:
   stage: sast

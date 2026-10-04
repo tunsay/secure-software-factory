@@ -98,3 +98,173 @@ Remplacée par deux commandes distinctes.
   dépréciée, comme pour la signature).
 - Job `images` : signature et attestation en format v3 (inchangé), **puis** en ancien format ;
   vérification des **deux** formats, avec la même identité exacte.
+- **Commit `ddbf88f`**, CI verte. Vérifié dans le registre (sans authentification), pour les deux
+  images : l'index v3 (`sha256-<digest>`), la signature ancien format (`.sig`) et l'attestation
+  ancien format (`.att`) répondent tous **HTTP 200**. Images : api `sha256:49e6c08a…`, web
+  `sha256:69c197b5…`.
+
+## 5a, étape 2 — Kyverno et les politiques, par Terraform
+
+| Fichier | Contenu |
+|---|---|
+| `platform/kyverno.tf` | Kyverno 1.19.1 (chart 3.9.1) dans `security`, une réplique par contrôleur ; puis les politiques, chart local `k8s/policies` |
+| `k8s/policies/templates/verify-signatures.yaml` | `ImageValidatingPolicy` : toute image `ghcr.io/tunsay/ssf-*` du namespace `ssf` doit porter une signature **et** un SBOM CycloneDX signés par l'identité exacte du workflow `ci` sur `main` |
+| `k8s/policies/templates/images-ghcr-digest.yaml` | `ValidatingPolicy` : dans `ssf`, seulement `ghcr.io/tunsay/`, et seulement par digest (conteneurs et conteneurs d'initialisation) |
+| `platform/app.tf` | l'application est déployée **après** les politiques : ses pods passent eux-mêmes la vérification |
+| `platform/variables.tf`, `dev.tfvars` | `admission_action` : **`Warn`** d'abord, puis `Deny` ; images de `ddbf88f` |
+
+Choix notables :
+- **`failurePolicy: Fail`** : si Kyverno ne peut pas vérifier, l'image est refusée (même principe
+  que J4-I2 : « pas pu contrôler » vaut « refusé »).
+- **`mutateDigest: false`** : Kyverno ne réécrit pas les images ; le manifeste déployé reste celui
+  du dépôt (sinon ArgoCD, au 5b, verrait une dérive permanente).
+- **Deux politiques complémentaires** : la vérification de signature ne regarde que nos images ;
+  sans la règle de registre, une image d'un autre registre échapperait à tout contrôle.
+- **Phase `Warn` d'abord** : le cluster admet mais renvoie ce qu'il aurait refusé. On vérifie que
+  nos propres images passent **avant** de bloquer — l'inverse ferait tomber l'application au
+  prochain redémarrage de pod.
+
+**V7 — un champ mal placé évité** : le résumé de la documentation plaçait `failurePolicy` sous
+`webhookConfiguration`. Dans la CRD v1 de la 1.19.1, il est directement sous `spec`
+(`webhookConfiguration` ne contient que `timeoutSeconds`). Placé selon la CRD.
+
+### Validation et application (04/10)
+
+- `make infra-lint` vert (chart des politiques compris), plan `2 to add, 1 to change,
+  0 to destroy` : Kyverno, les politiques en `Warn`, l'application sur les images de `ddbf88f`.
+- `make infra-up` : `2 added, 1 changed` ; les 4 contrôleurs Kyverno `Running` en 2 min 32 s,
+  sans aucune exception PSS dans `security`.
+
+### Phase `Warn` — `make admission-proof`
+
+```
+== image signée par la CI, par digest — celle qui tourne
+   ghcr.io/tunsay/ssf-api:ddbf88f56ea55b4ac122314c07f420d6c65f95ae@sha256:49e6c08a…
+ADMISE   (après Kyverno : ADMISE)
+
+== image jamais signée, par tag
+ADMISE   AVERTISSEMENT : Warning: Policy ssf-signature-ci failed: image ghcr.io/tunsay/ssf-api:8a5d1dc… does not have a digest
+         Warning: Policy ssf-registre-et-digest failed: image sans digest — un tag peut être déplacé dans le registre
+
+== image jamais signée, par digest
+ADMISE   AVERTISSEMENT : Warning: Policy ssf-signature-ci failed: image non signée par le workflow ci de ce dépôt sur main
+
+== image d'un autre registre (Docker Hub), par digest
+ADMISE   AVERTISSEMENT : Warning: Policy ssf-registre-et-digest failed: registre non autorisé — seules les images ghcr.io/tunsay/ sont admises
+
+== tag latest de notre registre
+ADMISE   AVERTISSEMENT : Warning: Policy ssf-signature-ci failed: image ghcr.io/tunsay/ssf-api:latest does not have a digest
+         Warning: Policy ssf-registre-et-digest failed: image sans digest — un tag peut être déplacé dans le registre
+```
+(sortie condensée)
+
+- **Le point décisif** : notre image doublement signée passe **sans avertissement** — Kyverno
+  vérifie sa signature et son SBOM. On peut bloquer sans faire tomber l'application.
+- Chaque autre image est signalée par la bonne règle, avec le bon motif.
+- `make app-proof` vert : l'application tourne sur les images doublement signées.
+
+### Mesurer la prémisse de l'ADR 0012
+
+La double signature a été décidée parce que « Kyverno ne lit pas le format v3 sur GHCR » — mais
+c'était, jusqu'ici, la description d'une PR, pas une mesure. Sixième test ajouté à la preuve :
+l'image de `f159b94`, signée par la CI **au seul format v3** (avant la double signature). Refusée,
+elle prouve la prémisse sur notre cluster ; admise un jour, elle remplira la condition de sortie.
+
+## APRÈS 5a — politiques en `Deny` (04/10)
+
+`make infra-up` : `0 added, 1 changed` (politiques `Warn` → `Deny`). Puis `make admission-proof` :
+
+```
+== image signée par la CI, par digest — celle qui tourne
+   ghcr.io/tunsay/ssf-api:ddbf88f56ea55b4ac122314c07f420d6c65f95ae@sha256:49e6c08aa84ef1596346cf742a6aa0a97108ee05a083fcc2819668729f2e0ee8
+ADMISE   (après Kyverno : ADMISE)
+
+== image jamais signée, par tag
+   ghcr.io/tunsay/ssf-api:8a5d1dc21ae57640f61dd66d470ad5a37470d208
+REFUSÉE  Error from server: error when creating "STDIN": admission webhook "vpol.validate.kyverno.svc-fail" denied the request: Policy ssf-registre-et-digest failed: image sans digest — un tag peut être déplacé dans le registre
+
+== image jamais signée, par digest
+   ghcr.io/tunsay/ssf-api@sha256:95dc3cb01a95f49d0515385d9a11cbffd5e38be22385e7de6b9ac345a106a038
+REFUSÉE  Error from server: error when creating "STDIN": admission webhook "ivpol.validate.kyverno.svc-fail-finegrained-ssf-signature-ci" denied the request: Policy ssf-signature-ci failed: image non signée par le workflow ci de ce dépôt sur main
+
+== image d'un autre registre (Docker Hub), par digest
+   docker.io/library/busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+REFUSÉE  Error from server: error when creating "STDIN": admission webhook "vpol.validate.kyverno.svc-fail" denied the request: Policy ssf-registre-et-digest failed: registre non autorisé — seules les images ghcr.io/tunsay/ sont admises
+
+== tag latest de notre registre
+   ghcr.io/tunsay/ssf-api:latest
+REFUSÉE  Error from server: error when creating "STDIN": admission webhook "ivpol.validate.kyverno.svc-fail-finegrained-ssf-signature-ci" denied the request: Policy ssf-signature-ci failed: image ghcr.io/tunsay/ssf-api:latest does not have a digest
+
+== image signée par la CI, au seul format cosign v3
+   ghcr.io/tunsay/ssf-api:f159b944b9f7b2b4e2ffb87c2fe6b097fdc1a24a@sha256:a0269bc4f1a0674940d19a8ecd6b189e41680fbda4820383d66b62dfed8f6ef7
+ADMISE   (après Kyverno : ADMISE)
+```
+
+| | Avant | Après |
+|---|---|---|
+| Image signée par la CI, par digest | admise | **admise** |
+| Image jamais signée (tag ou digest) | admise | **refusée** — « non signée par le workflow ci de ce dépôt sur main » / « sans digest » |
+| Image d'un autre registre | admise | **refusée** — « registre non autorisé » |
+| Tag `latest` (inexistant) | admise | **refusée** — « sans digest » |
+| Image au seul format v3 | *(test ajouté ensuite)* | **admise** (J5-I1) |
+
+Deux politiques, deux webhooks : `vpol…` (`ValidatingPolicy`, registre et digest) et
+`ivpol…` (`ImageValidatingPolicy`, signature). Le suffixe `-fail` est le `failurePolicy: Fail` :
+si Kyverno ne répond pas, l'API refuse le pod.
+
+**Nos propres pods sous la politique bloquante** : les trois pods de l'application supprimés,
+recréés par Kubernetes **en passant par Kyverno en `Deny`** — aucun événement `FailedCreate` ni
+`denied` (« aucun refus d'admission pour l'application »), les trois prêts
+(`kubectl wait --for=condition=Ready`), `make app-proof` vert. La preuve ne repose pas que sur le
+dry-run : l'application elle-même est admise.
+
+## Incidents
+
+### J5-I1 — La prémisse de l'ADR 0012 était fausse : la mesure la dément
+
+- **Symptôme** : sixième test, en phase `Warn` :
+  ```
+  == image signée par la CI, au seul format cosign v3 (ADR 0012)
+     ghcr.io/tunsay/ssf-api:f159b944…@sha256:a0269bc4…
+  ADMISE   (après Kyverno : REFUSÉE tant que Kyverno ne lit pas ce format sur GHCR)
+  ```
+  Admise **sans avertissement** : Kyverno 1.19.1 a vérifié sa signature et son SBOM.
+- **Explication écartée d'abord** : cette image porterait aussi une signature à l'ancien format.
+  Vérifié dans le registre : index v3 `sha256-a0269bc4…` → 200, `.sig` → **404**, `.att` →
+  **404**. Seul le format v3 existe : c'est bien lui que Kyverno a vérifié.
+- **Cause de l'erreur** : la PR kyverno#16754, sur laquelle reposait la décision, ne modifie qu'un
+  fichier : `pkg/image/verifiers/cpol/cosign/sigstore.go`. `cpol` = **ClusterPolicy**, l'ancien
+  type de politique. Le défaut GHCR est réel, mais dans ce chemin de code ; nous utilisons
+  `ImageValidatingPolicy` — choisi justement parce que ClusterPolicy est dépréciée — qui a son
+  propre chemin. Les tickets #17363 (clé ou KMS, pas sans clé) et #16678 ne concernent pas non
+  plus notre configuration (sans clé, attestation `intoto`).
+- **Ce que la mesure a évité** : maintenir une double signature dans la CI, avec une option
+  dépréciée de cosign, pour un défaut qui ne nous touche pas.
+- **Ce que la mesure ne prouve pas encore** : que la validation du **SBOM** discrimine. Aucune
+  image « signée mais sans SBOM » n'est disponible pour le vérifier : la règle passe pour les
+  images qui ont un SBOM, mais n'a pas été vue refuser une image qui n'en a pas. Limite notée.
+- **Leçon** : lire une PR, c'est lire **ce qu'elle modifie**, pas seulement ce qu'elle décrit.
+  Et la décision a été rattrapée parce que le test de sa prémisse a été écrit avant d'en avoir
+  besoin.
+- **Décision de Tunsay : retirer la double signature** (ADR 0013, qui remplace ce volet de
+  l'ADR 0012 ; l'ADR 0012 n'est pas modifié). La CI ne signe plus qu'au format v3 ; le test 6
+  devient « attendu admis ». Dans la même passe, les politiques passent en **`Deny`**.
+
+### J5-I2 — « Application en panne » : la vérification se trompait, pas Kyverno
+
+- **Symptôme** : après suppression des pods de l'application (pour les faire recréer sous la
+  politique bloquante), `kubectl rollout status` répond aussitôt « successfully rolled out »,
+  puis `make app-proof` : `No resources found in ssf namespace` et **503** sur l'application.
+- **Fausse piste immédiate** : Kyverno refuserait nos propres pods. Diagnostic en lecture seule
+  (`get deploy,rs,pods` + événements) : les trois pods sont `Running`, événements
+  `SuccessfulCreate`, `Scheduled`, `Pulled`, `Started`, aucun `FailedCreate` ni `denied`.
+- **Cause** : la vérification proposée était fausse. `rollout status` ne regarde que le
+  déploiement d'une **nouvelle version** ; le Deployment n'ayant pas changé, il répond « terminé »
+  sans attendre la recréation des pods. `app-proof` a tourné dans l'intervalle, avant que les
+  nouveaux pods n'existent.
+- **Correction** : attendre les pods eux-mêmes, `kubectl wait --for=condition=Ready pod -l
+  app.kubernetes.io/name=ssf`. Choix conservé : recréer les pods par suppression plutôt que par
+  `kubectl rollout restart`, qui modifierait le Deployment géré par Terraform.
+- **Leçon** : une commande d'attente doit attendre l'état qu'on veut constater, pas un état
+  voisin. Une vérification qui répond trop vite est plus trompeuse qu'une absence de
+  vérification.

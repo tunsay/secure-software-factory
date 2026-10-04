@@ -1,0 +1,5 @@
+apiVersion: v2
+name: ssf-policies
+description: Politiques d'admission Kyverno (types CEL) pour le namespace applicatif — jalon 5a, ADR 0012.
+type: application
+version: 0.1.0

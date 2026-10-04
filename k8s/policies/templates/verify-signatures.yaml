@@ -1,0 +1,54 @@
+# Une image de notre registre n'entre dans le namespace applicatif que si elle porte une signature
+# du workflow ci de ce dépôt, sur main, ET un SBOM CycloneDX signé par la même identité.
+#
+# ImageValidatingPolicy (type CEL) et non ClusterPolicy : ClusterPolicy est dépréciée en 1.19 et
+# retirée en 1.20. Et c'est ce type qui lit les bundles cosign v3 rangés sur GHCR (schéma de repli
+# par tag) : le défaut GHCR connu de Kyverno 1.19.1 est dans le code de ClusterPolicy (ADR 0013).
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: ssf-signature-ci
+spec:
+  validationActions: [{{ .Values.action }}]
+  # Fail : si Kyverno ne peut pas vérifier (indisponible, registre injoignable), l'image est
+  # refusée. « Je n'ai pas pu contrôler » vaut « refusé » (leçon de J4-I2).
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 30
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Values.namespace }}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  matchImageReferences:
+    - glob: {{ .Values.signedImages | quote }}
+  attestors:
+    - name: ci
+      cosign:
+        keyless:
+          identities:
+            - subject: {{ .Values.signer.subject | quote }}
+              issuer: {{ .Values.signer.issuer | quote }}
+        ctlog:
+          url: {{ .Values.rekorUrl | quote }}
+  attestations:
+    - name: sbom
+      intoto:
+        type: https://cyclonedx.org/bom
+  validationConfigurations:
+    required: true
+    verifyDigest: true
+    # Pas de réécriture de l'image par Kyverno : le manifeste déployé reste celui du dépôt
+    # (sinon ArgoCD, au jalon 5b, verrait une dérive permanente).
+    mutateDigest: false
+  validations:
+    - expression: >-
+        images.containers.map(image, verifyImageSignatures(image, [attestors.ci])).all(e, e > 0)
+      message: image non signée par le workflow ci de ce dépôt sur main
+    - expression: >-
+        images.containers.map(image, verifyAttestationSignatures(image, attestations.sbom, [attestors.ci])).all(e, e > 0)
+      message: SBOM CycloneDX signé absent pour cette image

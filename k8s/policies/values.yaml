@@ -1,0 +1,24 @@
+# Politiques d'admission du namespace applicatif. Valeurs fournies par Terraform
+# (infra/terraform/platform/kyverno.tf).
+
+# Empreinte des fichiers du chart, calculée par Terraform : fait apparaître au plan toute
+# modification du chart local. Aucun template ne la lit.
+policiesChecksum: ""
+
+# Deny : refuser. Warn : admettre, mais avertir le client de ce qui serait refusé (phase de mise
+# en place). Audit : admettre et consigner dans les rapports. Deny et Warn sont incompatibles.
+action: Deny
+
+# Namespace protégé.
+namespace: ssf
+
+# Seul registre admis, et motif des images dont la signature est vérifiée.
+registry: ghcr.io/tunsay/
+signedImages: ghcr.io/tunsay/ssf-*
+
+# Seule identité autorisée à signer : le workflow ci de ce dépôt, exécuté sur main (ADR 0010,
+# 0011). Même valeur exacte qu'en CI et dans make supply-chain-proof.
+signer:
+  subject: https://github.com/tunsay/secure-software-factory/.github/workflows/ci.yml@refs/heads/main
+  issuer: https://token.actions.githubusercontent.com
+rekorUrl: https://rekor.sigstore.dev

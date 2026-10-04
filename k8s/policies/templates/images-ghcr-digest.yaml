@@ -1,0 +1,30 @@
+# Dans le namespace applicatif : uniquement notre registre, et uniquement par digest.
+# Complète ssf-signature-ci, qui ne vérifie que les images de notre registre : sans cette règle,
+# une image d'un autre registre échapperait à toute vérification.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: ssf-registre-et-digest
+spec:
+  validationActions: [{{ .Values.action }}]
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Values.namespace }}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  variables:
+    # Conteneurs et conteneurs d'initialisation : aucun ne doit échapper à la règle.
+    - name: images
+      expression: >-
+        object.spec.containers.map(c, c.image) +
+        (has(object.spec.initContainers) ? object.spec.initContainers.map(c, c.image) : [])
+  validations:
+    - expression: variables.images.all(i, i.startsWith({{ .Values.registry | quote }}))
+      message: registre non autorisé — seules les images {{ .Values.registry }} sont admises
+    - expression: variables.images.all(i, i.contains('@sha256:'))
+      message: image sans digest — un tag peut être déplacé dans le registre

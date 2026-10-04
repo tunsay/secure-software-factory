@@ -14,7 +14,7 @@ Stack décidée après analyse de 10 offres DevSecOps CDI (voir `docs/rapport/00
 React+TypeScript (front minimal), Python/FastAPI (back), Terraform, Kubernetes (kind local),
 GitHub Actions + GitLab CI en miroir, GHCR.
 
-## Où on en est (3 oct. 2026)
+## Où on en est (4 oct. 2026)
 
 - **Jalon 1 — terminé.** App minimale, images durcies, chaîne de scan locale + CI. Voir
   `docs/rapport/01-jalon-1.md`.
@@ -30,8 +30,11 @@ GitHub Actions + GitLab CI en miroir, GHCR.
   Cosign sans clé par le seul job `images` (identité exacte `ci.yml@refs/heads/main`), déploiement
   par `tag@digest`, bases par digest, `requirements.txt` à empreintes, contrôle des dérogations.
   Sept incidents. Voir `docs/rapport/04-jalon-4.md`, ADR 0010 et 0011.
-- **Jalon 5 — prochain.** Kyverno + ArgoCD. Vérifier d'abord que Kyverno lit les signatures
-  cosign v3 (bundles v0.3, rangés sur GHCR par tag `sha256-<digest>`, pas d'API referrers).
+- **Jalon 5 — en cours.** 5a (04/10, prouvé en local) : Kyverno 1.19.1 en `Deny` sur `ssf` —
+  signature + SBOM par l'identité exacte de la CI, registre `ghcr.io/tunsay/` seul, digest
+  obligatoire. Politiques CEL (`ImageValidatingPolicy`, `ValidatingPolicy`) car `ClusterPolicy`
+  est dépréciée. `ImageValidatingPolicy` lit bien les bundles cosign v3 sur GHCR (mesuré, J5-I1) :
+  double signature de l'ADR 0012 retirée (ADR 0013). Prochain : 5b, ArgoCD.
 - **En attente** : trier les PR Dependabot ouvertes (#9 à #17) selon la politique du dépôt.
 
 Les paquets GHCR `ssf-api` et `ssf-web` sont publics (vérifié le 28/09 : tirage anonyme OK).
@@ -39,7 +42,7 @@ Ingress : Traefik par NodePort, pas ingress-nginx (retiré en mars 2026) — ADR
 3b (03/10) : NetworkPolicies + comptes sans jeton + Traefik namespacé (ADR 0008). **Le noyau
 WSL2 n'a pas NFT_QUEUE : kindnet n'applique pas les NetworkPolicies en local** (incident I8) ;
 preuve réseau sur cluster éphémère en CI, workflow `e2e` (ADR 0009).
-Journal des incidents du jalon en cours : `docs/rapport/journal-jalon-3.md`.
+Journal des incidents du jalon en cours : `docs/rapport/journal-jalon-5.md`.
 
 Le plan directeur complet des 6 jalons est dans `docs/rapport/plan.md`. Jalons 4-6 : SBOM +
 signature Cosign keyless + digests (scan IaC déjà là) ; Kyverno + ArgoCD ; observabilité
@@ -61,6 +64,7 @@ make app-proof     # preuve 3a : app servie par Traefik sur 127.0.0.1:8081, pods
 make isolation-proof # preuve 3b : 8 tests réseau + identité, OUVERT/BLOQUÉ (même commande avant/après)
 make isolation-check # idem + verdict strict ; échoue en local sur les tests réseau (WSL2, incident I8)
 make supply-chain-proof # preuve jalon 4 : signature, SBOM, digest, qui peut signer, build figé
+make admission-proof # preuve 5a : 6 images soumises au cluster en dry-run serveur, ADMISE/REFUSÉE
 ```
 
 Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make infra-up`.
@@ -96,6 +100,11 @@ Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make inf
 - **Un cluster kind est jetable** : un redémarrage de Docker Desktop l'emporte, avec l'état
   platform qu'il contient. `make infra-up` reconstruit tout. Le provider plante au `plan` si le
   cluster a disparu → `terraform state rm kind_cluster.this` puis `apply`.
+- **Kyverno en `Deny` avec `failurePolicy: Fail`** : si Kyverno est arrêté ou ne joint pas
+  GHCR/Rekor, aucun pod ne se crée dans `ssf` (voulu : « pas pu contrôler » vaut « refusé »).
+  Déployer une image = reporter tag ET digests du résumé du job `images` dans `dev.tfvars`.
+- **Constater une recréation de pods** : `kubectl wait --for=condition=Ready pod -l ...`, jamais
+  `kubectl rollout status` (il répond « terminé » si le Deployment n'a pas changé ; J5-I2).
 
 ## Conventions du dépôt (à respecter absolument)
 

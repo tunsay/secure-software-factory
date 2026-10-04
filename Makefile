@@ -123,10 +123,12 @@ infra-down: ## Détruit platform puis le cluster (demande confirmation)
 	-cd $(TF_PLATFORM) && terraform destroy -input=false -var-file=dev.tfvars
 	cd $(TF_CLUSTER) && terraform destroy -input=false
 
-chart-lint: ## Lint et rendu du chart Helm, scan trivy des manifests rendus
+chart-lint: ## Lint et rendu des charts Helm (application, politiques), scan trivy des manifests rendus
 	helm lint $(CHART) --strict --set $(CHART_SET)
 	helm template ssf $(CHART) --set $(CHART_SET) > /dev/null
 	trivy config --exit-code 1 --severity HIGH,CRITICAL --helm-set $(CHART_SET) $(CHART)
+	helm lint k8s/policies --strict
+	helm template ssf-policies k8s/policies > /dev/null
 
 app-proof: ## Preuve 3a : l'app répond via l'ingress, depuis des pods durcis
 	$(KUBECTL) -n ssf get pods -o wide

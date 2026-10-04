@@ -52,6 +52,21 @@ variable "image_digests" {
   }
 }
 
+variable "admission_action" {
+  description = <<-EOT
+    Action des politiques d'admission Kyverno sur le namespace applicatif.
+    Deny : refuser. Warn : admettre mais avertir (mise en place, pour voir ce qui serait refusé
+    avant de bloquer). Audit : admettre et consigner dans les rapports.
+  EOT
+  type        = string
+  default     = "Deny"
+
+  validation {
+    condition     = contains(["Deny", "Warn", "Audit"], var.admission_action)
+    error_message = "Deny, Warn ou Audit."
+  }
+}
+
 variable "ingress_http_node_port" {
   description = "NodePort HTTP de Traefik. Doit être identique à la variable du même nom dans la couche cluster."
   type        = number
