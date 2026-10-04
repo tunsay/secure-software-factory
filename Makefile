@@ -28,7 +28,7 @@ CHART_VALUES := $(CHART)/values-dev.yaml
 
 .PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools \
         infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof isolation-proof isolation-check supply-chain-proof admission-proof drift-proof \
-        drift-check app-wait dast dast-check
+        drift-check app-wait dast dast-check promote
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -135,8 +135,11 @@ chart-lint: ## Lint et rendu des charts Helm (application, politiques, ArgoCD), 
 	helm lint k8s/argocd --strict
 	helm template ssf-argocd k8s/argocd > /dev/null
 
-app-wait: ## Attend qu'ArgoCD ait synchronisé l'app (Synced, Healthy) et que ses pods soient prêts
-	@bash scripts/app-wait.sh
+app-wait: ## Attend qu'ArgoCD ait synchronisé l'app (Synced, Healthy) et que ses pods soient prêts ; REVISION=<sha> : ce commit-là
+	@APP_REVISION=$(REVISION) bash scripts/app-wait.sh
+
+promote: ## Prépare le déploiement d'un commit (SHA=<sha>) : signatures vérifiées, digests écrits dans values-dev.yaml
+	@bash scripts/promote.sh $(SHA)
 
 app-proof: ## Preuve 3a : l'app répond via l'ingress, depuis des pods durcis
 	$(KUBECTL) -n ssf get pods -o wide

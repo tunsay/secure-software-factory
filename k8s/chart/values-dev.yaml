@@ -5,10 +5,10 @@
 # de la CI : Kyverno refuse toute image qui n'est pas signée par ce workflow (jalon 5a).
 # Le tag est informatif ; c'est le digest qui fait foi au tirage.
 image:
-  tag: d9fa77cee50b3ed6c3ce641a006a3c4597608751
+  tag: 12fa353b04b686cbd3816459ffcdecf010988b2c
   digests:
-    api: sha256:752c1b9c5f078958155d30b96c809fea1dfed29d32725e759eb993ddf635eed2
-    web: sha256:69c197b5009c0781d69a24f7cf90c829e0471101c671e960a3b4d5c4c65968e4
+    api: sha256:3b9c0754786b436be14128828703d6ca155deba9bb77cf14d6df274e283175fa
+    web: sha256:4b874a0773299c1f4af926433e74563ea79b3c8f0aa5b89f9411241d6f9bf8b0
 
 api:
   env:

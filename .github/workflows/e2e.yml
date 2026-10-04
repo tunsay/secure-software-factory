@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   isolation:
-    name: cluster éphémère · isolation-check + app-proof + drift-check
+    name: cluster éphémère · isolation-check + app-proof + dast-check + drift-check
     # Version figée, pas ubuntu-latest : le résultat dépend du noyau du runner.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -55,6 +55,10 @@ jobs:
 
       - name: make app-proof — non-régression du jalon 3a
         run: make app-proof
+
+      # DAST (jalon 6a) : ZAP et les expositions ciblées, sur l'application déployée par ArgoCD.
+      - name: make dast-check — échoue sur un avertissement ZAP non dérogé ou une exposition
+        run: make dast-check
 
       # En dernier : la preuve perturbe l'application, qu'ArgoCD doit remettre en état seul.
       - name: make drift-check — échoue si une dérive décrite persiste ou si ArgoCD a trop de droits
