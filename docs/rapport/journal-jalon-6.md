@@ -196,6 +196,87 @@ rien ne le signale (J5-I3).
 | V7 | trivy-operator **v0.34.0** (24/08), chart 0.36.0 : scanne en continu les images qui tournent et la configuration des workloads, expose des métriques Prometheus. | Couvre la question 3 : une vulnérabilité publiée **après** le déploiement, que la CI ne voit plus. |
 | V8 | trivy-operator, droits par défaut (ClusterRole du chart, lue dans le template) : lecture de **tous les Secrets** du cluster (`accessGlobalSecretsAndServiceAccount: true`), **création de Jobs dans tous les namespaces**, lecture de toutes les ConfigMaps et de tous les journaux de pods. | Un scanner de sécurité compromis pourrait lancer un pod privilégié dans un namespace non durci : chemin d'escalade. Même problème que le chart d'ArgoCD au 5b. |
 
+## APRÈS 6b — `make posture-proof` (04/10)
+
+Installation : `15 added, 4 changed, 0 destroyed` ; puis la correction de J6-I2 (`0 added,
+1 changed`). Pour avoir quelque chose à mesurer, `make app-proof` (trafic) et `make
+admission-proof` (refus) juste avant, puis une minute pour que Prometheus collecte :
+
+```
+== Prometheus présent : réponses mesurées
+
+== 1. Requêtes refusées à l'admission par Kyverno, depuis son démarrage
+   30
+
+== 2. L'application est-elle synchronisée avec le dépôt, et saine ?
+   1        health_status=Healthy, sync_status=Synced
+
+== 3. Vulnérabilités dans les images qui tournent dans ssf, par gravité
+   0        severity=Critical
+   5        severity=High
+   52       severity=Low
+   11       severity=Medium
+   98       severity=Unknown
+
+== 4. Défauts de configuration des objets de ssf, par gravité
+   0        severity=Critical
+   0        severity=High
+   3        severity=Low
+   2        severity=Medium
+
+== 5. Redémarrages de conteneurs dans ssf, dernière heure
+   0
+
+== 6. Réponses servies au public par Traefik, par code, depuis son démarrage
+   2        code=200
+
+== 7. Alertes de sécurité en cours
+   1        alertname=SsfRefusAdmission
+```
+
+Détail des rapports de trivy-operator :
+
+```
+NAME                            REPOSITORY       TAG                                        SCANNER   CRITICAL   HIGH   MEDIUM   LOW   UNKNOWN
+replicaset-api-776b8f94b5-api   tunsay/ssf-api   12fa353b04b686cbd3816459ffcdecf010988b2c   Trivy     0          5      11       52    98
+replicaset-web-f695b7c4-web     tunsay/ssf-web   12fa353b04b686cbd3816459ffcdecf010988b2c   Trivy     0          0      0        0     0
+
+LimitRange/defaults
+  LOW AVD-KSV-0039 limit range usage
+ReplicaSet/api-776b8f94b5
+  MEDIUM AVD-KSV-0125 Restrict container images to trusted registries
+ReplicaSet/web-f695b7c4
+  LOW AVD-KSV-0021 Runs with GID <= 10000
+  LOW AVD-KSV-0020 Runs with UID <= 10000
+  MEDIUM AVD-KSV-0125 Restrict container images to trusted registries
+```
+
+| Question | Avant | Après |
+|---|---|---|
+| Refus d'admission | sans réponse | **30** depuis le démarrage de Kyverno |
+| Application synchronisée et saine ? | sans réponse | **Synced / Healthy** |
+| Vulnérabilités de ce qui tourne | sans réponse | API : 0 critique, **5 hautes**, 11 moyennes, 52 faibles ; front : **0** |
+| Défauts de configuration | sans réponse | **5** (2 moyens, 3 faibles) |
+| Redémarrages (1 h) | sans réponse | **0** |
+| Réponses servies au public | sans réponse | **2 × 200** |
+| Alertes de sécurité en cours | sans réponse | **`SsfRefusAdmission`** |
+
+Lecture :
+- **Le cluster signale de lui-même** : les refus d'`admission-proof` ont déclenché l'alerte
+  `SsfRefusAdmission`, qui s'était éteinte entre-temps (fenêtre de 10 minutes) et se rallume.
+- **30 refus pour 24 avant** : `admission-proof` soumet 4 images refusées, et le compteur en
+  ajoute 6. Deux des quatre (tag sans digest, `latest`) sont refusées par **les deux**
+  politiques ; Kyverno compte un refus par politique.
+- **Ce que la CI ne montrait pas** : l'image de l'API porte 5 vulnérabilités hautes. La CI
+  bloque les failles hautes et critiques **corrigeables** (`--ignore-unfixed`) ; trivy-operator
+  affiche tout ce qui tourne, corrigeable ou non. À qualifier : des failles sans correctif publié
+  (cohérent avec la politique de la CI), ou un trou dans le contrôle.
+- **Défauts de configuration** : KSV-0125 (registres de confiance) est un faux positif de
+  contexte — trivy ne connaît pas `ghcr.io/tunsay`, que Kyverno impose, preuve à l'appui ;
+  KSV-0020/0021 : le front tourne en UID/GID 101, l'utilisateur non-root de l'image nginx,
+  conforme à PSS mais sous le seuil recommandé de 10000 ; KSV-0039 : le LimitRange fixe des
+  valeurs par défaut, pas de maximum. Trois points ouverts, faibles ou contextuels.
+
 ## Incidents
 
 ### J6-I1 — L'attente échoue sur un pod qui disparaît pendant qu'on l'attend
