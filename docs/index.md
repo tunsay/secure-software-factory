@@ -26,6 +26,7 @@ Code source : [github.com/tunsay/secure-software-factory](https://github.com/tun
    - [Jalon 6 — DAST, observabilité, modèle de menaces](rapport/06-jalon-6.md)
    - [Conclusion — comment les jalons s'emboîtent, et de quoi on est protégé](rapport/07-conclusion.md)
 4. [Les décisions d'architecture](adr/README.md), une par fichier, jamais réécrites.
+5. [Lancer le projet sur son PC](INSTALLATION.md), pas à pas, de Windows neuf au cluster complet.
 
 ## Ce qui est démontré, en une phrase par jalon
 

@@ -42,7 +42,8 @@ CI qui échoue s'il disparaît. Rapport complet, décisions et modèle de menace
 
 ## Démo
 
-Prérequis : Windows + WSL2 (Ubuntu) + Docker Desktop, puis `make install-tools`.
+Prérequis : Windows + WSL2 (Ubuntu) + Docker Desktop. **Installation pas à pas sur un nouveau PC :
+[`docs/INSTALLATION.md`](docs/INSTALLATION.md).**
 
 ```bash
 make infra-up            # cluster kind et plateforme par Terraform (plan affiché, confirmation), puis ArgoCD déploie l'app
