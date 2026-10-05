@@ -14,7 +14,7 @@ Stack décidée après analyse de 10 offres DevSecOps CDI (voir `docs/rapport/00
 React+TypeScript (front minimal), Python/FastAPI (back), Terraform, Kubernetes (kind local),
 GitHub Actions + GitLab CI en miroir, GHCR.
 
-## Où on en est (4 oct. 2026)
+## Où on en est (5 oct. 2026)
 
 - **Jalon 1 — terminé.** App minimale, images durcies, chaîne de scan locale + CI. Voir
   `docs/rapport/01-jalon-1.md`.
@@ -37,8 +37,20 @@ GitHub Actions + GitLab CI en miroir, GHCR.
   de cluster** ni compte (ADR 0014) ; Terraform ne déploie plus l'app. Trois incidents. Voir
   `docs/rapport/05-jalon-5.md`. Écarts au plan : pas de dépôt séparé, runAsNonRoot/limites laissés
   à PSS, Sealed Secrets et kube-bench abandonnés.
-- **Jalon 6 — prochain.** Prometheus/Grafana, ZAP, modèle de menaces, README final, PDF.
-- **En attente** : trier les PR Dependabot ouvertes (#9 à #17) selon la politique du dépôt.
+- **Jalon 6 — terminé (05/10).** Voir `docs/rapport/06-jalon-6.md` (journal :
+  `journal-jalon-6.md`, J6-I1, J6-I2) et ADR 0015.
+  - 6a : `make dast` (ZAP 2.17.0 + 4 expositions ciblées), avant 5 avertissements et 4 expositions,
+    après 0 et 0 ; `make dast-check` bloquant en e2e. `make promote SHA=` vérifie signature + SBOM
+    puis écrit `values-dev.yaml`.
+  - 6b : Prometheus + Grafana (kube-prometheus-stack 91.7.1, sans node-exporter ni Alertmanager,
+    Grafana namespacé et sans compte), trivy-operator aux **droits écrits par nous** (`trivy.tf`),
+    6 alertes `famille=securite`, tableau de bord « posture » ; `make posture-proof` : 7/7.
+  - 6c : `docs/threat-model.md`, STRIDE cadré par les 5 ateliers d'EBIOS RM, chaque contrôle relié
+    à une preuve exécutable. 6d : README final, `docs/index.md` (GitHub Pages, dossier `docs/`),
+    `make report-pdf` (pandoc 3.11 + Typst, image par digest).
+- **Le plan des 6 jalons est terminé.** Suites possibles, dans l'ordre : trier les PR Dependabot ;
+  points ouverts du chapitre 6 (images d'outils CI par digest, signature des images de plateforme,
+  KSV-0125/0020/0021/0039) ; captures d'écran des jalons 3 à 6 (`docs/rapport/img/`).
 
 Les paquets GHCR `ssf-api` et `ssf-web` sont publics (vérifié le 28/09 : tirage anonyme OK).
 Ingress : Traefik par NodePort, pas ingress-nginx (retiré en mars 2026) — ADR 0007.
@@ -70,7 +82,11 @@ make supply-chain-proof # preuve jalon 4 : signature, SBOM, digest, qui peut sig
 make admission-proof # preuve 5a : 6 images soumises au cluster en dry-run serveur, ADMISE/REFUSÉE
 make drift-proof   # preuve 5b : 5 dérives manuelles, ANNULÉE/PERSISTANTE, + droits d'ArgoCD
 make drift-check   # idem + verdict strict (CI e2e)
-make app-wait      # attend Synced/Healthy d'ArgoCD et les pods prêts (appelé par infra-up)
+make app-wait      # attend Synced/Healthy d'ArgoCD et les pods prêts (appelé par infra-up) ; REVISION=<sha>
+make promote SHA=<sha> # vérifie signature + SBOM des images d'un commit, écrit values-dev.yaml (sans commiter)
+make dast          # preuve 6a : ZAP baseline + 4 expositions ciblées (dast-check : strict, CI e2e)
+make posture-proof # preuve 6b : 7 questions de sécurité posées à Prometheus
+make report-pdf    # rapport complet (chapitres 0 à 6 + modèle de menaces) : docs/rapport/rapport.pdf
 ```
 
 Reprise de session : `docker ps --format '{{.Names}}' | grep ssf-dev || make infra-up`.

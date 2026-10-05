@@ -22,7 +22,7 @@ fournisseur cloud (ADR 0004), coût zéro.
 | 3 | Déploiement + cloisonnement | Helm, Traefik, NetworkPolicies, RBAC, preuve e2e | **terminé** |
 | 4 | Chaîne d'approvisionnement | SBOM, signature Cosign, digests, empreintes, moindre privilège CI | **terminé** |
 | 5 | Policy as code + GitOps | Kyverno (signature à l'admission), ArgoCD sans droits de cluster | **terminé** |
-| 6 | Observabilité + DAST + récit | Prometheus/Grafana, ZAP, menaces | à faire |
+| 6 | Observabilité + DAST + récit | ZAP bloquant, Prometheus/Grafana, trivy-operator, menaces, vitrine | **terminé** |
 
 ---
 
@@ -146,16 +146,26 @@ dans le dépôt. Détail, preuves et trois incidents : `05-jalon-5.md` ; notes b
 
 ---
 
-## Jalon 6 — Observabilité, DAST et mise en récit · À FAIRE
+## Jalon 6 — Observabilité, DAST et mise en récit · TERMINÉ
 
-- kube-prometheus-stack (Prometheus + Grafana) via Helm, plus un tableau de bord « posture
-  sécurité » (vulnérabilités par sévérité, âge des images, dérive de conformité).
-- OWASP ZAP baseline en CI contre un environnement éphémère (le D de DAST, complète le SAST/SCA).
-- Restreindre `/api/docs` et `/api/metrics` par environnement ; handler d'erreur qui masque
-  l'entrée dans les 422 en prod (dettes notées au jalon 1).
-- Modèle de menaces STRIDE (`docs/threat-model.md`) relié aux notions EBIOS RM.
-- README final, schéma d'architecture, publication de la vitrine sur GitHub Pages.
-- Assemblage du PDF du rapport à partir des six chapitres.
+Regarder l'application comme un attaquant, voir ce que la chaîne refuse et répare, expliquer
+pourquoi chaque contrôle existe. Détail, preuves et deux incidents : `06-jalon-6.md` ; notes
+brutes : `journal-jalon-6.md`.
+
+- **6a — DAST** : OWASP ZAP 2.17.0 et quatre expositions ciblées (`make dast`), bloquant en CI
+  e2e. Avant : 5 avertissements, interfaces internes publiques, entrée renvoyée dans les 422.
+  Après : 0 et 0. Le DAST a trouvé un défaut invisible aux outils statiques : les en-têtes de
+  sécurité perdus sur les fichiers JS et CSS (héritage `add_header` de nginx).
+- **6b — observabilité** : Prometheus + Grafana (sans node-exporter ni Alertmanager, Grafana
+  namespacé et sans compte), trivy-operator aux droits écrits par nous, 6 alertes de sécurité,
+  tableau de bord « posture ». `make posture-proof` : 7 questions, avant sans réponse, après
+  7 sur 7. ADR 0015.
+- **6c — modèle de menaces** : `docs/threat-model.md`, STRIDE cadré par les cinq ateliers
+  d'EBIOS RM, chaque contrôle relié à une preuve exécutable, risques résiduels assumés.
+- **6d — vitrine** : README final, GitHub Pages (dossier `docs/`), `make report-pdf`.
+
+Écarts au plan : pas d'« âge des images » (aucune métrique standard) ; `/api/docs`, `/api/metrics`
+et l'écho des 422 fermés **partout**, pas seulement en prod (l'environnement exposé est `dev`).
 
 ---
 

@@ -269,8 +269,13 @@ Lecture :
   politiques ; Kyverno compte un refus par politique.
 - **Ce que la CI ne montrait pas** : l'image de l'API porte 5 vulnérabilités hautes. La CI
   bloque les failles hautes et critiques **corrigeables** (`--ignore-unfixed`) ; trivy-operator
-  affiche tout ce qui tourne, corrigeable ou non. À qualifier : des failles sans correctif publié
-  (cohérent avec la politique de la CI), ou un trou dans le contrôle.
+  affiche tout ce qui tourne, corrigeable ou non. Qualifiées (lecture du rapport, version
+  corrigée de chaque faille haute) : **aucune n'a de correctif publié** — CVE-2025-69720 dans
+  ncurses (`libncursesw6`, `libtinfo6`, `ncurses-base`, `ncurses-bin` 6.5+20250216-2) et
+  CVE-2026-9538 dans `perl-base` 5.40.1-6+deb13u1, toutes avec une version corrigée vide. Pas
+  de trou dans la CI : cohérent avec sa politique. Mais désormais **visible** : le jour où
+  Debian publie un correctif, une reconstruction de l'image le prendra (`apt-get upgrade` au
+  build), et le tableau de bord le montrera.
 - **Défauts de configuration** : KSV-0125 (registres de confiance) est un faux positif de
   contexte — trivy ne connaît pas `ghcr.io/tunsay`, que Kyverno impose, preuve à l'appui ;
   KSV-0020/0021 : le front tourne en UID/GID 101, l'utilisateur non-root de l'image nginx,

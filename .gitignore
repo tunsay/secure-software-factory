@@ -33,6 +33,9 @@ kubeconfig*
 !.env.example
 trivy-results.*
 zap-report.*
+# Rapport PDF généré (make report-pdf) : le dépôt garde les sources Markdown.
+docs/rapport/rapport.typ
+docs/rapport/rapport.pdf
 *.sarif
 
 # OS / IDE

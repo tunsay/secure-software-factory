@@ -125,9 +125,9 @@ est protégé.
     in "k8s/chart/templates/web.yaml", line 7, column 7
   ```
   (idem `api.yaml` et `ingress.yaml`). Rien n'est commité.
-- **Cause** : un template Helm **n'est pas du YAML** tant qu'il n'est pas rendu. `{{- include
-  ... }}` est de la syntaxe Go template ; pour un parseur YAML, `{` ouvre un dictionnaire en ligne,
-  et le `-` qui suit est invalide.
+- **Cause** : un template Helm **n'est pas du YAML** tant qu'il n'est pas rendu.
+  \{\{- include ... \}\} est de la syntaxe Go template ; pour un parseur YAML, `{` ouvre un
+  dictionnaire en ligne, et le `-` qui suit est invalide.
 - **Correction** : `check-yaml` exclut `k8s/chart/templates/`, et un hook local `chart-lint`
   (`make chart-lint`) prend le relais sur tout fichier du chart : `helm lint --strict`, rendu,
   puis trivy sur le résultat. On ne retire pas un contrôle, on le remplace par celui qui

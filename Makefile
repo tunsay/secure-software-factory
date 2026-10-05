@@ -28,7 +28,7 @@ CHART_VALUES := $(CHART)/values-dev.yaml
 
 .PHONY: help setup up down logs build test lint semgrep scan scan-image sbom clean install-tools \
         infra-up infra-plan infra-down infra-lint infra-proof attack-escape chart-lint app-proof isolation-proof isolation-check supply-chain-proof admission-proof drift-proof \
-        drift-check app-wait dast dast-check promote posture-proof
+        drift-check app-wait dast dast-check promote posture-proof report-pdf
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -259,3 +259,25 @@ dast-check: ## dast + verdict : échoue sur un avertissement ZAP ou une expositi
 
 posture-proof: ## Preuve 6b : 7 questions de sécurité posées à Prometheus — même commande avant et après
 	@bash scripts/posture-proof.sh
+
+# ---------------------------------------------------------------------------
+# Rapport (jalon 6d) : les chapitres et le modèle de menaces, en un PDF.
+# ---------------------------------------------------------------------------
+
+# pandoc 3.11 et le moteur Typst : accents et caractères de dessin des schémas sans LaTeX.
+# Image épinglée par digest, comme toutes les autres ; pandoc 3.12 avait moins de 7 jours.
+PANDOC_IMAGE   := pandoc/typst:3.11.0@sha256:ae9dfa3c58cae72d363484442993b761ff4bc30202ec12823bc1e59fa952c892
+REPORT_SOURCES := docs/rapport/00-contexte.md docs/rapport/01-jalon-1.md docs/rapport/02-jalon-2.md \
+                  docs/rapport/03-jalon-3.md docs/rapport/04-jalon-4.md docs/rapport/05-jalon-5.md \
+                  docs/rapport/06-jalon-6.md docs/rapport/07-conclusion.md docs/threat-model.md
+PANDOC_RUN     = DOCKER_CONFIG=$$(mktemp -d) docker run --rm -v "$(CURDIR):/data" -u $$(id -u):$$(id -g)
+
+report-pdf: ## Rapport complet en PDF (chapitres 0 à 7 + modèle de menaces) : docs/rapport/rapport.pdf
+	@# 1) Markdown -> Typst, à côté des chapitres : les captures (img/...) s'y résolvent.
+	$(PANDOC_RUN) $(PANDOC_IMAGE) $(REPORT_SOURCES) --standalone --to typst --toc --toc-depth=2 \
+	  -M title="Secure Software Factory" -M subtitle="Rapport de projet DevSecOps" -M author=Tunsay \
+	  -M lang=fr -V papersize=a4 -o docs/rapport/rapport.typ
+	@# 2) Typst -> PDF, racine = le dépôt (Typst refuse les fichiers hors de sa racine).
+	$(PANDOC_RUN) --entrypoint typst $(PANDOC_IMAGE) compile --root /data docs/rapport/rapport.typ docs/rapport/rapport.pdf
+	@rm -f docs/rapport/rapport.typ
+	@echo "docs/rapport/rapport.pdf"

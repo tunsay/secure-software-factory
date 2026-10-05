@@ -205,8 +205,8 @@ inconsistent final plan ») : le namespace n'existait pas encore au moment du pl
 Remplacée par une empreinte SHA-256 du chart.
 *Leçon : « experimental » est un avertissement, pas une étiquette.*
 
-**4. `check-yaml` ne sait pas lire un template Helm.** `{{- include }}` n'est pas du YAML avant
-rendu. Le template est exclu de `check-yaml` **et** couvert par un nouveau hook `chart-lint`.
+**4. `check-yaml` ne sait pas lire un template Helm.** \{\{- include \}\} n'est pas du YAML
+avant rendu. Le template est exclu de `check-yaml` **et** couvert par un nouveau hook `chart-lint`.
 *Leçon : on n'exclut un fichier d'un contrôle que si un contrôle adapté le couvre.*
 
 **5. « Private key found » dans le journal de bord.** En documentant l'incident 2, le journal
