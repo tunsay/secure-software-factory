@@ -6,6 +6,6 @@
 # Résolu dans la même image que la production (Python 3.14) : les dépendances conditionnelles
 # (selon la version de Python) sont celles de l'image, pas celles du poste.
 fastapi==0.141.1
-uvicorn[standard]==0.53.0
+uvicorn[standard]==0.54.0
 pydantic==2.13.5
 prometheus-fastapi-instrumentator==8.1.0
