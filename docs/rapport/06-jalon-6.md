@@ -93,6 +93,14 @@ Sept questions qu'un responsable sécurité se pose chaque matin, posées à Pro
 Le résultat le plus parlant : **le cluster signale de lui-même** qu'on a tenté d'y faire entrer
 des images non conformes, sans que personne n'ait à lancer de commande.
 
+![Grafana, tableau de bord « Posture sécurité » : 30 refus d'admission, application Synced / Healthy, vulnérabilités et défauts de configuration par gravité](img/06-grafana-posture.png)
+
+![Prometheus : les six règles d'alerte du groupe ssf-securite, dont SsfVulnerabiliteCritique dépliée — expression, étiquettes famille=securite et severity=critical](img/06-prometheus-alertes.png)
+
+Sur la capture de Grafana, « Alertes de sécurité en cours » est revenu à 0 : l'alerte
+`SsfRefusAdmission` porte sur une fenêtre de 10 minutes, et s'est éteinte d'elle-même une fois
+les refus d'`admission-proof` passés.
+
 Et ce que la CI ne montrait pas : l'image de l'API porte **5 vulnérabilités hautes**. Qualifiées
 une à une : aucune n'a de correctif publié (CVE-2025-69720 dans ncurses, CVE-2026-9538 dans
 perl-base). La CI les tolère par politique (`--ignore-unfixed` : bloquer ce qu'on ne peut pas

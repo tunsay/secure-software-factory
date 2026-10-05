@@ -50,7 +50,9 @@ GitHub Actions + GitLab CI en miroir, GHCR.
     `make report-pdf` (pandoc 3.11 + Typst, image par digest).
 - **Le plan des 6 jalons est terminé.** Suites possibles, dans l'ordre : trier les PR Dependabot ;
   points ouverts du chapitre 6 (images d'outils CI par digest, signature des images de plateforme,
-  KSV-0125/0020/0021/0039) ; captures d'écran des jalons 3 à 6 (`docs/rapport/img/`).
+  KSV-0125/0020/0021/0039) ; captures d'écran des jalons 3 et 4 (`docs/rapport/img/`, celles du 5 et
+  du 6 sont faites). GitHub Pages en ligne : https://tunsay.github.io/secure-software-factory/
+  (dossier `docs/`, Jekyll : jamais d'accolades doubles brutes dans les .md, les échapper `\{\{`).
 
 Les paquets GHCR `ssf-api` et `ssf-web` sont publics (vérifié le 28/09 : tirage anonyme OK).
 Ingress : Traefik par NodePort, pas ingress-nginx (retiré en mars 2026) — ADR 0007.

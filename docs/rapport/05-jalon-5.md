@@ -81,6 +81,8 @@ ArgoCD déploie le chart `k8s/chart` de **ce dépôt**, avec `values-dev.yaml`. 
 (`prune`), annulation des modifications manuelles (`selfHeal`). Terraform ne déploie plus
 l'application ; il garde la plateforme, **et les droits d'ArgoCD**.
 
+![ArgoCD v3.5.3 : l'application ssf, projet ssf, synchronisée sur main depuis k8s/chart, saine — interface en lecture seule, sans compte, ouverte par port-forward](img/05-argocd-application.png)
+
 ### Un outil de déploiement sans les clés du cluster
 
 | | Chart par défaut | Ici |

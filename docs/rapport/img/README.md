@@ -21,5 +21,18 @@ Déposer ici les PNG nommés exactement comme ci-dessous. Le rapport les référ
 | `02-docker-volumes.png` | Les trois volumes `/var` des nœuds, dont celui d'etcd | Docker Desktop → Volumes |
 | `02-attack-escape.png` _(optionnel)_ | La sortie de `make attack-escape` : shadow lu dans `default`, refus dans `ssf` | terminal |
 
+## Jalon 5
+
+| Fichier | Quoi | Où |
+|---|---|---|
+| `05-argocd-application.png` | L'application `ssf` dans ArgoCD : projet `ssf`, `Healthy` / `Synced`, cible `main`, chemin `k8s/chart` | https://127.0.0.1:8090, par port-forward (voir CLAUDE.md) |
+
+## Jalon 6
+
+| Fichier | Quoi | Où |
+|---|---|---|
+| `06-grafana-posture.png` | Le tableau de bord « Posture sécurité » : refus d'admission, état d'ArgoCD, vulnérabilités et défauts de configuration par gravité | http://127.0.0.1:3000/d/ssf-posture, par port-forward |
+| `06-prometheus-alertes.png` | Les six règles d'alerte du groupe `ssf-securite`, une règle dépliée | http://127.0.0.1:9090/alerts, par port-forward |
+
 Conseils : fenêtre du navigateur à ~1400 px de large, thème clair (meilleur rendu à l'impression),
 Win+Maj+S pour capturer une zone.
