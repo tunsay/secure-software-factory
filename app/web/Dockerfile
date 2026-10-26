@@ -15,7 +15,7 @@ RUN npm run build
 # --- étape 2 : nginx non privilégié, fichiers statiques seulement --------------
 # Branche stable de nginx sur l'Alpine courant. Un tag figé (ex. 1.27-alpine) vieillit
 # en quelques mois et accumule des CVE OpenSSL/musl/libxml2 déjà corrigées upstream.
-FROM nginxinc/nginx-unprivileged:stable-alpine3.24@sha256:ed04ec1ff34502c339ee5c3ae3f855442398edc1d05591e2b98981dcbbd20b1e AS runtime
+FROM nginxinc/nginx-unprivileged:stable-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03 AS runtime
 
 # Correctifs Alpine publiés depuis la dernière reconstruction de l'image officielle.
 USER root
